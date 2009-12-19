@@ -8,7 +8,7 @@ namespace Standalone_Circle_Calc
 {
     public class Class1 : IPlugin
     {
-        string _VERSION = "1.0.0";
+        string _VERSION = "1.0.1";
 
         #region IPlugin Members
         public IHost _host;                             //Required for plugin
@@ -2129,12 +2129,12 @@ namespace Standalone_Circle_Calc
             _calcSkillList.Remove(skill);
 
             skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 4, 4, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
+            CalculateReq(ref circle, ref currentCircle, 2, 3, 3, 4, 4, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "7th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
             _calcSkillList.Remove(skill);
 
             skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 4, 4, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
+            CalculateReq(ref circle, ref currentCircle, 2, 3, 3, 4, 4, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "8th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
             _calcSkillList.Remove(skill);
 
@@ -2169,12 +2169,12 @@ namespace Standalone_Circle_Calc
             _calcSkillList.Remove(skill);
 
             skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 2, 2, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
+            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 3, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "1st Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
             _calcSkillList.Remove(skill);
 
             skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 2, 2, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
+            CalculateReq(ref circle, ref currentCircle, 2, 2, 2, 3, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "2nd Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
             _calcSkillList.Remove(skill);
 
