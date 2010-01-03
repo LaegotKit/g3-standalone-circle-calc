@@ -40,6 +40,5 @@ namespace Standalone_Circle_Calc
         {
             this.Close();
         }
-
     }
 }

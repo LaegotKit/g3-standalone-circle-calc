@@ -8,7 +8,7 @@ namespace Standalone_Circle_Calc
 {
     public class Class1 : IPlugin
     {
-        string _VERSION = "1.0.1";
+        string _VERSION = "1.1.15";
 
         #region IPlugin Members
         public IHost _host;                             //Required for plugin
@@ -16,8 +16,10 @@ namespace Standalone_Circle_Calc
 
         private Guilds _guild = Guilds.Commoner;        //
         private Guilds _calcGuild = Guilds.Commoner;    //Default Guild set to Commonder
+        private SkillSets _skillset = SkillSets.all;    //Default is sort all
         private int _calcCircle = 0;                    //
         private bool _calculating = false;              //
+        private bool _sorting = false;                  //
         private bool _parsing = false;                  //
 
         // enabled is unused at the moment
@@ -38,6 +40,16 @@ namespace Standalone_Circle_Calc
             Cleric,
             WarriorMage,
             Necromancer
+        };
+
+        private enum SkillSets
+        {
+            armor,
+            weapons,
+            magic,
+            survival,
+            lore,
+            all
         };
 
         //Class Skill
@@ -96,9 +108,7 @@ namespace Standalone_Circle_Calc
         public string ParseInput(string Text)
         {
             //User asking for help with commands 
-            //Note as more plugins do this this could get VERY long.
-            //Also not sure how this would work with multiple plugins doing this as well
-            if (Text == "/?")
+            if (Text == "/cc ?")
             {
                 _host.SendText("#echo");
                 _host.SendText(@"#echo Standalone Circle Calculator(Ver:" + _VERSION + ") Usage:");
@@ -108,6 +118,8 @@ namespace Standalone_Circle_Calc
                 _host.SendText(@"#echo """"    """" /calc <circle> (will calculate what you need for the circle you input)");
                 _host.SendText(@"#echo """"    """" /calc <guild> <circle> (combination of the two above)");
                 _host.SendText(@"#echo """"  """" The guild name must be spelled out completely, but with no spaces(moonmage, warriormage).");
+                _host.SendText(@"#echo """"    """" /sort will sort your all sills");
+                _host.SendText(@"#echo """"    """" /sort <skillset will sort the skills in the skillset");
 
                 return "";
             }
@@ -213,6 +225,25 @@ namespace Standalone_Circle_Calc
                     return Text;
                 }
             }
+            //start sorting skills
+            if (Text.StartsWith("/sort"))
+            {
+                //clear leading/trailing spaces
+                Text = Text.Trim();
+                //if there is a space, means there is something after /calc
+                if (Text.Contains(" "))
+                {
+                    string skillset = "";
+                    skillset = Text.Substring(Text.IndexOf(" ") + 1, Text.Length - 1 - Text.IndexOf(" "));
+                    _skillset = GetSkillSet(skillset);
+                }
+                else
+                    _skillset = SkillSets.all;
+
+                Text = "exp " + _skillset.ToString() + " all";
+                _sorting = true;
+                return Text;
+            }
             //means no special arguments, send command on to game
             return Text;
         }
@@ -226,6 +257,8 @@ namespace Standalone_Circle_Calc
             _host.SendText(@"#echo """"    """" /calc <circle> (will calculate what you need for the circle you input)");
             _host.SendText(@"#echo """"    """" /calc <guild> <circle> (combination of the two above)");
             _host.SendText(@"#echo """"  """" The guild name must be spelled out completely, but with no spaces(moonmage, warriormage).");
+            _host.SendText(@"#echo """"    """" /sort will sort your all sills");
+            _host.SendText(@"#echo """"    """" /sort <skillset will sort the skills in the skillset");
         }
 
         //Required for Plugin - 
@@ -288,14 +321,18 @@ namespace Standalone_Circle_Calc
                     }
 
 
-                    if (_calculating == true && _parsing == true)
+                    if ((_calculating == true || _sorting == true) && _parsing == true)
                     {
+
                         if (Text.StartsWith("EXP HELP for more information"))
                         {
                             _parsing = false;
                             try
                             {
-                                CalculateCircle();
+                                if (_calculating)
+                                    CalculateCircle();
+                                if (_sorting)
+                                    SortSkills();
                             }
                             catch (Exception ex)
                             {
@@ -317,7 +354,7 @@ namespace Standalone_Circle_Calc
                         }
 
                     }
-                    else if (_calculating == true && Text.StartsWith("Circle: "))
+                    else if ((_sorting || _calculating) && Text.StartsWith("Circle: "))
                         _parsing = true;
                 }
             }
@@ -505,22 +542,26 @@ namespace Standalone_Circle_Calc
                 }
             }
 
-            //Converts strink rank to a touble
+            //Converts string rank to a touble
             double dRank = Double.Parse(rank);
 
-            if (_calculating == true)
+            if (_calculating)
                 _calcSkillList.Add(name, Convert.ToInt32(Math.Floor(dRank)));
+            if (_sorting)
+                _sortSkillList.Add(name, dRank);
         }
 
         #endregion
 
-        #region Circle Calculator
+        #region Circle Calculator/Skill Sorter
 
         private Hashtable _calcSkillList = new Hashtable();
+        private Hashtable _sortSkillList = new Hashtable();
         private ArrayList reqList;
+        private ArrayList sortList; 
         private int totalTDPs;
         private int totalRanks;
-
+        private int MaxRankLen;
 
         private class CircleReq
         {
@@ -541,7 +582,17 @@ namespace Standalone_Circle_Calc
 
 
         }
+        private class SkillRanks
+        {
+            public double rank;
+            public string name;
 
+            public SkillRanks(double r, string n)
+            {
+                rank = r;
+                name = n;
+            }
+        }
         private class ReqComparer : IComparer
         {
 
@@ -550,6 +601,15 @@ namespace Standalone_Circle_Calc
                 CircleReq req1 = (CircleReq)x;
                 CircleReq req2 = (CircleReq)y;
                 return req1.currentCircle.CompareTo(req2.currentCircle);
+            }
+        }
+        private class RankComparer : IComparer
+        {
+            public int Compare(object x, object y)
+            {
+                SkillRanks req1 = (SkillRanks)x;
+                SkillRanks req2 = (SkillRanks)y;
+                return req2.rank.CompareTo(req1.rank);
             }
         }
 
@@ -625,12 +685,43 @@ namespace Standalone_Circle_Calc
 
         }
 
+        private SkillSets GetSkillSet(string skillset)
+        {
+            switch (skillset.ToLower())
+            {
+                case "armor":
+                case "armo":
+                case "arm":
+                    return SkillSets.armor;
+                case "weapons":
+                case "weapon":
+                case "weapo":
+                case "weap":
+                case "wea":
+                    return SkillSets.weapons;
+                case "magic":
+                case "magi":
+                case "mag":
+                    return SkillSets.magic;
+                case "survival":
+                case "surviva":
+                case "surviv":
+                case "survi":
+                case "surv":
+                case "sur":
+                    return SkillSets.survival;
+                case "lore":
+                case "lor":
+                    return SkillSets.lore;
+                case "all":
+                default:
+                    return SkillSets.all;
+            }
+        }
         private void ShowReqs()
         {
             int circle = -1;
             _calcCircle = 0;
-
-
 
             foreach (CircleReq req in reqList)
             {
@@ -664,6 +755,71 @@ namespace Standalone_Circle_Calc
 
             _calcGuild = Guilds.None;
             _calculating = false;
+        }
+
+        private void ShowRanks()
+        {
+            string format = "{0:" + (MaxRankLen).ToString()+"}";
+            _host.SendText("#echo ");
+            string ListText = "";
+            foreach (SkillRanks sr in sortList)
+            {
+                ListText = "#echo " + String.Format(format,sr.name) + ": " + String.Format("{0:F2}",sr.rank);
+                _host.SendText(ListText);
+            }
+            _host.SendText("#echo");
+            string TDPText = "";
+            string TotalRanksText = "";
+            TDPText = "#echo TDPs Gained from "; 
+            TotalRanksText = "#echo Total Ranks in ";
+            if (_skillset == SkillSets.all)
+            {
+                TDPText = TDPText + _skillset.ToString() + " skillsets";
+                TotalRanksText = TotalRanksText + _skillset.ToString() + " skillsets";
+            }
+            else
+            {
+                TDPText = TDPText + "the " + _skillset.ToString() + " skillset";
+                TotalRanksText = TotalRanksText + "the " + _skillset.ToString() + " skillset";
+            }
+            TDPText = TDPText + ": " + String.Format("{0,6}", totalTDPs.ToString());
+            TotalRanksText = TotalRanksText + ": " + String.Format("{0,6}", totalRanks.ToString());
+            _host.SendText(TDPText);
+            _host.SendText(TotalRanksText);
+            
+            _skillset = SkillSets.all;
+            _sorting = false;
+        }
+
+        private void SortSkills()
+        {
+            sortList = new ArrayList();
+            totalRanks = 0;
+            totalTDPs = 0;
+            MaxRankLen = 0; 
+            int ranks;
+            foreach (DictionaryEntry skill in _sortSkillList)
+            {
+                ranks = Convert.ToInt32(Math.Floor(Convert.ToDouble(skill.Value)));
+                totalTDPs += ranks * (ranks + 1) / 2;
+                totalRanks += ranks;
+            }
+            totalTDPs = Convert.ToInt32(totalTDPs / 200);   
+            string skname = "";
+            while (_sortSkillList.Count != 0)
+            {
+                if (skname.Length > MaxRankLen)
+                    MaxRankLen = skname.Length;
+                skname = HighestSkill(_sortSkillList);
+                sortList.Add(new SkillRanks(Convert.ToDouble(_sortSkillList[skname]), skname));
+                _sortSkillList.Remove(skname);
+            }
+
+            RankComparer rankComparer = new RankComparer();
+            sortList.Sort(rankComparer);
+
+            ShowRanks();
+            _sortSkillList.Clear();
         }
 
         private void CalculateCircle()
@@ -729,6 +885,21 @@ namespace Standalone_Circle_Calc
             ShowReqs();
             _calcSkillList.Clear();
 
+        }
+
+        private string HighestSkill(Hashtable skills)
+        {
+            string skillName = "";
+            int ranks = 0;
+            foreach (DictionaryEntry skill in skills)
+            {
+                if (Convert.ToInt32(skill.Value) > ranks)
+                {
+                    skillName = skill.Key.ToString();
+                    ranks = Convert.ToInt32(skill.Value);
+                }
+            }
+            return skillName;
         }
 
         private string HighestMagic(Hashtable skills)
