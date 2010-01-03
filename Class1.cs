@@ -3,12 +3,13 @@ using System.Collections;
 using GeniePlugin.Interfaces;
 using System.Xml;
 using System.Text.RegularExpressions;
+using System.Windows.Forms;
 
 namespace Standalone_Circle_Calc
 {
     public class Class1 : IPlugin
     {
-        string _VERSION = "1.1.15";
+        string _VERSION = "1.1.18";
 
         #region IPlugin Members
         public IHost _host;                             //Required for plugin
@@ -90,6 +91,7 @@ namespace Standalone_Circle_Calc
             //Set Genie Variables if not already set
             if (_host.get_Variable("ExpTracker.ShowPast150") == "")
                 _host.set_Variable("ExpTracker.ShowPast150", "0");
+
         }
 
         //Required for Plugin - Called when Genie needs the name of the plugin (On menu)
@@ -562,6 +564,7 @@ namespace Standalone_Circle_Calc
         private int totalTDPs;
         private int totalRanks;
         private int MaxRankLen;
+        private int MaxDigitLen;
 
         private class CircleReq
         {
@@ -759,14 +762,15 @@ namespace Standalone_Circle_Calc
 
         private void ShowRanks()
         {
-            string format = "{0:" + (MaxRankLen).ToString()+"}";
+            string format = "{0," + (-MaxRankLen).ToString()+"} - {1,"+(MaxDigitLen)+":F2}";
             _host.SendText("#echo ");
             string ListText = "";
             foreach (SkillRanks sr in sortList)
             {
-                ListText = "#echo " + String.Format(format,sr.name) + ": " + String.Format("{0:F2}",sr.rank);
+                ListText = "#echo \"" + String.Format(format, sr.name, sr.rank) + "\"";
                 _host.SendText(ListText);
             }
+
             _host.SendText("#echo");
             string TDPText = "";
             string TotalRanksText = "";
@@ -786,7 +790,7 @@ namespace Standalone_Circle_Calc
             TotalRanksText = TotalRanksText + ": " + String.Format("{0,6}", totalRanks.ToString());
             _host.SendText(TDPText);
             _host.SendText(TotalRanksText);
-            
+
             _skillset = SkillSets.all;
             _sorting = false;
         }
@@ -796,7 +800,8 @@ namespace Standalone_Circle_Calc
             sortList = new ArrayList();
             totalRanks = 0;
             totalTDPs = 0;
-            MaxRankLen = 0; 
+            MaxRankLen = 0;
+            MaxDigitLen = 0;
             int ranks;
             foreach (DictionaryEntry skill in _sortSkillList)
             {
@@ -806,12 +811,16 @@ namespace Standalone_Circle_Calc
             }
             totalTDPs = Convert.ToInt32(totalTDPs / 200);   
             string skname = "";
+            double skrank = 0;
             while (_sortSkillList.Count != 0)
             {
+                skname = HighestSkill(_sortSkillList);
+                skrank = Convert.ToDouble(_sortSkillList[skname]);
+                sortList.Add(new SkillRanks(skrank, skname));
                 if (skname.Length > MaxRankLen)
                     MaxRankLen = skname.Length;
-                skname = HighestSkill(_sortSkillList);
-                sortList.Add(new SkillRanks(Convert.ToDouble(_sortSkillList[skname]), skname));
+                if (skrank.ToString().Length > MaxDigitLen)
+                    MaxDigitLen = skrank.ToString().Length;
                 _sortSkillList.Remove(skname);
             }
 
