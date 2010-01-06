@@ -9,7 +9,7 @@ namespace Standalone_Circle_Calc
 {
     public class Class1 : IPlugin
     {
-        string _VERSION = "1.1.18";
+        string _VERSION = "1.1.19";
 
         #region IPlugin Members
         public IHost _host;                             //Required for plugin
@@ -899,13 +899,13 @@ namespace Standalone_Circle_Calc
         private string HighestSkill(Hashtable skills)
         {
             string skillName = "";
-            int ranks = 0;
+            double ranks = 0.0;
             foreach (DictionaryEntry skill in skills)
             {
-                if (Convert.ToInt32(skill.Value) > ranks)
+                if (Convert.ToDouble(skill.Value) > ranks)
                 {
                     skillName = skill.Key.ToString();
-                    ranks = Convert.ToInt32(skill.Value);
+                    ranks = Convert.ToDouble(skill.Value);
                 }
             }
             return skillName;
