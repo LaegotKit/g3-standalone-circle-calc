@@ -9,7 +9,7 @@ namespace Standalone_Circle_Calc
 {
     public class Class1 : IPlugin
     {
-        string _VERSION = "1.1.19";
+        string _VERSION = "1.1.21";
 
         #region IPlugin Members
         public IHost _host;                             //Required for plugin
@@ -1139,6 +1139,7 @@ namespace Standalone_Circle_Calc
                             case "Skinning":
                             case "Stalking":
                             case "Swimming":
+                            case "Stealing":
                                 if (Convert.ToInt32(skill.Value) > ranks)
                                 {
                                     skillName = skill.Key.ToString();
@@ -1745,6 +1746,16 @@ namespace Standalone_Circle_Calc
             skill = HighestSurvival(_calcSkillList);
             CalculateReq(ref circle, ref currentCircle, 2, 0, 0, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "8th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
+            _calcSkillList.Remove(skill);
+
+            skill = HighestSurvival(_calcSkillList);
+            CalculateReq(ref circle, ref currentCircle, 2, 0, 0, 0, 0, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
+            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "9th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
+            _calcSkillList.Remove(skill);
+
+            skill = HighestSurvival(_calcSkillList);
+            CalculateReq(ref circle, ref currentCircle, 2, 0, 0, 0, 0, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
+            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "10th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
             _calcSkillList.Remove(skill);
 
         }
