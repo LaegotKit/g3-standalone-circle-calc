@@ -21,10 +21,22 @@ namespace Standalone_Circle_Calc
         }
         private void btnOk_Click(object sender, EventArgs e)
         {
-            if (cbCircle150.Checked == true)
-                _host.set_Variable("ExpTracker.ShowPast150", "1");
+            if (Post150Circle.Checked == true)
+                _host.SendText("#var CircleCalc.Display 1");
+            else if (NextCircle.Checked == true)
+                _host.SendText("#var CircleCalc.Display 2");
             else
-                _host.set_Variable("ExpTracker.ShowPast150", "0");
+                _host.SendText("#var CircleCalc.Display 0");
+
+            if (chkGag.Checked)
+                _host.SendText("#var CircleCalc.GagFunny 1");
+            else
+                _host.SendText("#var CircleCalc.GagFunny 0");
+
+            if (cboSort.Text == "Bottom") 
+                _host.SendText("#var CircleCalc.Sort 1");
+            else
+                _host.SendText("#var CircleCalc.Sort 0");
 
             _host.SendText("#var save");
 

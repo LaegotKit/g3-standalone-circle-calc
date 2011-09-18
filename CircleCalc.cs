@@ -9,11 +9,17 @@ namespace Standalone_Circle_Calc
 {
     public class Class1 : IPlugin
     {
-        string _VERSION = "1.2.1";
+        //Constant variable for the Properties of the plugin
+        //At the top for easy changes.
+        string _NAME = "Circle Calculator";
+        string _VERSION = "2.0.0";
+        string _AUTHOR = "VTCifer";
+        string _DESCRIPTION = "Calculcates the circle requirments for different guilds.  It will also sort skills form highest to lowest.";
 
-        #region IPlugin Members
         public IHost _host;                             //Required for plugin
         public System.Windows.Forms.Form _parent;       //Required for plugin
+        
+        #region Circle Calc Members
 
         private Guilds _guild = Guilds.Commoner;        //
         private Guilds _calcGuild = Guilds.Commoner;    //Default Guild set to Commonder
@@ -23,8 +29,7 @@ namespace Standalone_Circle_Calc
         private bool _sorting = false;                  //
         private bool _parsing = false;                  //
 
-        // enabled is unused at the moment
-        private bool _enabled = true;
+        private bool _enabled = true;                   // enabled appears unused at the moment
 
         private enum Guilds
         {
@@ -71,6 +76,65 @@ namespace Standalone_Circle_Calc
             public int sortTB = 0;      //Ordered value based on top to bottom, THEN left to right 
         }
         #endregion
+
+        #region IPlugin Properties
+
+        //Required for Plugin - Called when Genie needs the name of the plugin (On menu)
+        //Return Value:
+        //              string: Text that is the name of the Plugin
+        public string Name
+        {
+            get { return _NAME; }
+        }
+
+        //Required for Plugin - Called when Genie needs the plugin version (error text
+        //                      or the plugins window)
+        //Return Value:
+        //              string: Text that is the version of the plugin
+        public string Version
+        {
+            get { return _VERSION; }
+        }
+
+        //Required for Plugin - Called when Genie needs the plugin Author (plugins window)
+        //Return Value:
+        //              string: Text that is the Author of the plugin
+        public string Author
+        {
+            get { return _AUTHOR; }
+        }
+
+        //Required for Plugin - Called when Genie needs the plugin Description (plugins window)
+        //Return Value:
+        //              string: Text that is the description of the plugin
+        //                      This can only be up to 200 Characters long, else it will appear
+        //                      "truncated"
+        public string Description
+        {
+            get { return _DESCRIPTION; }
+        }
+
+        //Required for Plugin - Called when Genie needs disable/enable the plugin (Plugins window,
+        //                      or when Gneie needs to know the status of the plugin (???)
+        //Get:
+        //      Not Known what it is used for
+        //Set:
+        //      Used by Plugins Window 
+        public bool Enabled
+        {
+            get
+            {
+                return _enabled;
+            }
+            set
+            {
+                _enabled = value;
+            }
+
+        }
+
+        #endregion
+
         #region IPlugin Methods
 
         //Required for Plugin - Called on first load
@@ -90,16 +154,10 @@ namespace Standalone_Circle_Calc
 
             //Set Genie Variables if not already set
             if (_host.get_Variable("ExpTracker.ShowPast150") == "")
-                _host.set_Variable("ExpTracker.ShowPast150", "0");
+                _host.SendText("#var ExpTracker.ShowPast150 0");
+            if (_host.get_Variable("CircleCalc.GagFunny") == "")
+                _host.SendText("#var CircleCalc.GagFunny 0");
 
-        }
-
-        //Required for Plugin - Called when Genie needs the name of the plugin (On menu)
-        //Return Value:
-        //              string: Text that is the name of the Plugin
-        public string Name
-        {
-            get { return "Standalone Circle Calc"; }
         }
 
         //Required for Plugin - Called when user enters text in the command box
@@ -259,7 +317,7 @@ namespace Standalone_Circle_Calc
         //              string Text:  That DIRECT text comes from the game (non-"xml")
         //Return Value:
         //              string: Text that will be sent to the to the windows as if from the game
-        public string ParseText(string Text)
+        public string ParseText(string Text, string Window)
         {
             try
             {
@@ -375,39 +433,32 @@ namespace Standalone_Circle_Calc
 
         }
 
-        public string Version
-        {
-            get { return _VERSION; }
-        }
-
         public void ParentClosing()
         {
-        }
-
-        public bool Enabled
-        {
-            get
-            {
-                return _enabled;
-            }
-            set
-            {
-                _enabled = value;
-            }
-
         }
 
         public void OpenSettingsWindow(System.Windows.Forms.Form parent)
         {
             Form1 form = new Form1(ref _host);
 
-            if (_host.get_Variable("ExpTracker.ShowPast150") == "1")
-                form.cbCircle150.Checked = true;
+            if (_host.get_Variable("CircleCalc.Display") == "1")
+                form.Post150Circle.Checked = true;
+            else if(_host.get_Variable("CircleCalc.Display") == "2")
+                form.NextCircle.Checked=true;
             else
-                form.cbCircle150.Checked = false;
+                form.Normal.Checked = true;
 
-            if (parent != null)
-                form.MdiParent = parent;
+            if (_host.get_Variable("CircleCalc.GagFunny") == "1")
+                form.chkGag.Checked = true;
+            else
+                form.chkGag.Checked = false;
+            if (_host.get_Variable("CircleCalc.Sort") == "1")
+                form.cboSort.Text = "Bottom";
+            else
+                form.cboSort.Text = "Top";
+
+                if (parent != null)
+                    form.MdiParent = parent;
 
             form.Show();
         }
@@ -564,7 +615,7 @@ namespace Standalone_Circle_Calc
             public int ranksNeeded;
             public int ranks;
             public int currentCircle;
-
+            //constructor
             public CircleReq(int c, int cc, int rn, string n, int r)
             {
                 circle = c;
@@ -597,6 +648,17 @@ namespace Standalone_Circle_Calc
                 return req1.currentCircle.CompareTo(req2.currentCircle);
             }
         }
+
+        private class ReqComparerBottom : IComparer
+        {
+            public int Compare(object x, object y)
+            {
+                CircleReq req1 = (CircleReq)y;
+                CircleReq req2 = (CircleReq)x;
+                return req1.currentCircle.CompareTo(req2.currentCircle);
+            }
+        }
+
         private class RankComparer : IComparer
         {
             public int Compare(object x, object y)
@@ -712,41 +774,100 @@ namespace Standalone_Circle_Calc
                     return SkillSets.all;
             }
         }
+        
         private void ShowReqs()
         {
-            int circle = -1;
+            int circle;
+            bool LineBreak = false;
             _calcCircle = 0;
+
+            if (_host.get_Variable("CircleCalc.Sort") == "0")
+                circle = ((CircleReq)reqList[0]).circle;
+            else
+                circle = ((CircleReq)reqList[reqList.Count-1]).circle;
+
+            //if (_host.get_Variable("CircleCalc.Sort") == "0")
+                _host.SendText("#echo Requirements for Circle " + circle.ToString() + ":");
+            _host.SendText("#echo");
 
             foreach (CircleReq req in reqList)
             {
-                if (circle > 0 && circle != req.circle)
+                if (((_host.get_Variable("CircleCalc.Sort") == "0" && req.circle != circle && LineBreak == false) ||
+                     (_host.get_Variable("CircleCalc.Sort") == "1" && req.circle == circle && LineBreak == false)) && 
+                     _host.get_Variable("CircleCalc.Display") != "2" )
                 {
                     _host.SendText("#echo");
-                    circle = 0;
+                    LineBreak = true;
                 }
 
-                if (req.circle < 500)
-                {
-                    if (_host.get_Variable("ExpTracker.ShowPast150") == "1" || req.circle <= 150)
-                    {
-                        if (circle < 0)
-                        {
-                            _host.SendText("#echo Requirements for Circle " + req.circle.ToString() + ":");
-                            _host.SendText("#echo");
-                            circle = req.circle;
-                        }
-                        _host.SendText("#echo You have enough " + req.name + " for Circle " + req.currentCircle + " and need " + (req.ranksNeeded - req.ranks).ToString() + " (" + req.ranksNeeded + ") ranks for Circle " + req.circle);
-                    }
-                }
-
+                if ((_host.get_Variable("CircleCalc.Display") == "1" || req.circle <= 150) && ((_host.get_Variable("CircleCalc.Display") != "2") || req.circle == circle) )
+                    _host.SendText("#echo You have enough " + req.name + " for Circle " + req.currentCircle + " and need " + (req.ranksNeeded - req.ranks).ToString() + " (" + req.ranksNeeded + ") ranks for Circle " + req.circle);
             }
+            /*
+            if (_host.get_Variable("CircleCalc.Sort") == "1")
+            {
+                _host.SendText("#echo");
+                _host.SendText("#echo Requirements for Circle " + circle.ToString() + ".");
+            }
+            */
 
             _host.SendText("#echo");
             _host.SendText("#echo TDPs Gained: " + String.Format("{0,6}", totalTDPs.ToString()));
             _host.SendText("#echo Total Ranks: " + String.Format("{0,6}", totalRanks.ToString()));
-            if (_calcGuild == Guilds.Bard)
-                _host.SendText("#echo P.S. Bards suck(even with your poorly designed screams). Reroll.");
+            if (_host.get_Variable("CircleCalc.GagFunny") != "1")
+            {
+                int seed = 0;
+                System.Random randomizer;
+                seed = (int)(DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalSeconds;
+//                seed = Convert.ToInt32(_host.get_Variable("gametime"));
+                randomizer = new System.Random(seed);
+                int rand = randomizer.Next();
+                switch (_calcGuild)
+                {
+                    case Guilds.None:
+                        _host.SendText("#echo Join a guild you loser.");
+                        break;
+                    case Guilds.Barbarian:
 
+                        break;
+                    case Guilds.Bard:
+                        if (rand % 2 == 0)
+                            _host.SendText("#echo P.S. Bards suck(even with your poorly designed screams). Reroll.");
+                        else
+                            _host.SendText("#echo Shouldn't you be down at the pub?");
+                        break;
+                    case Guilds.Cleric:
+                        _host.SendText("#echo Rezz Plz?");
+                        break;
+                    case Guilds.Commoner:
+                        _host.SendText("#echo Join a guild you loser.");
+                        break;
+                    case Guilds.Empath:
+                        break;
+                    case Guilds.MoonMage:
+                        break;
+                    case Guilds.Necromancer:
+                        if (rand % 2 == 0)
+                            _host.SendText("#echo Don't you think it's time to give up the evil tea parties");
+                        else
+                            _host.SendText("#echo Sacrified enough puppies today?");
+                        break;
+                    case Guilds.Paladin:
+                        break;
+                    case Guilds.Ranger:
+                        break;
+                    case Guilds.Thief:
+                        break;
+                    case Guilds.Trader:
+                        break;
+                    case Guilds.WarriorMage:
+                        _host.SendText("#echo WM Strategy:  10 prep TC, 20 cast area, 30 prep CL, 40 cast area, 50 goto 10");
+                        break;
+                    default:
+                        _host.SendText("#echo Do you break everything you touch?");
+                        break;
+                }
+            }
             _calcGuild = Guilds.None;
             _calculating = false;
         }
@@ -876,8 +997,26 @@ namespace Standalone_Circle_Calc
                     _host.SendText("#echo /calc: Try joining a guild first.");
                     return;
             }
-            ReqComparer reqComparer = new ReqComparer();
-            reqList.Sort(reqComparer);
+            IComparer reqCompareSort;
+            if (_host.get_Variable("CircleCalc.Sort") == "1")
+            {
+                reqCompareSort = new ReqComparerBottom();
+                reqList.Sort(reqCompareSort);
+
+                while (((CircleReq)reqList[reqList.Count - 1]).circle == 500)
+                    reqList.RemoveAt(reqList.Count - 1);
+            }
+            else
+            {
+                reqCompareSort = new ReqComparer();
+                reqList.Sort(reqCompareSort);
+
+                while (((CircleReq)reqList[0]).circle == 500)
+                    reqList.RemoveAt(0);
+            }
+
+            //ReqComparer reqComparer = new ReqComparer();
+            
 
             ShowReqs();
             _calcSkillList.Clear();
@@ -1128,6 +1267,36 @@ namespace Standalone_Circle_Calc
                             case "Stalking":
                             case "Swimming":
                             case "Stealing":
+                                if (Convert.ToInt32(skill.Value) > ranks)
+                                {
+                                    skillName = skill.Key.ToString();
+                                    ranks = Convert.ToInt32(skill.Value);
+                                }
+                                break;
+                            default:
+                                break;
+
+                        }
+                    }
+                    break;
+                case Guilds.Bard:
+                    foreach (DictionaryEntry skill in skills)
+                    {
+                        switch (skill.Key.ToString())
+                        {
+                            case "Climbing":
+                            case "Disarm Traps":
+                            case "Escaping":
+                            case "Evasion":
+                            case "First Aid":
+                            case "Foraging":
+                            case "Hiding":
+                            case "Lockpicking":
+                            case "Perception":
+                            case "Skinning":
+                            case "Stalking":
+                            case "Stealing":
+                            case "Swimming":
                                 if (Convert.ToInt32(skill.Value) > ranks)
                                 {
                                     skillName = skill.Key.ToString();
@@ -1870,21 +2039,21 @@ namespace Standalone_Circle_Calc
             //001-010:  1       1       2               2       2           2       2
             //011-030:  1       2       2               2       2           2       2
             //031-070:  2       3       3               3       3           3       3
-            //071-100:  2       3       3               3       3           3       3
-            //100 +  :  3       4       3               3       3           3       3
+            //071-100:  2       3       4               4       4           4       4
+            //100 +  :  3       4       4               4       4           4       4
             CalculateReq(ref circle, ref currentCircle, 1, 1, 2, 2, 3, Convert.ToInt32(_calcSkillList["Multi Opponent"]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Multi Opponent", Convert.ToInt32(_calcSkillList["Multi Opponent"])));
             CalculateReq(ref circle, ref currentCircle, 1, 2, 3, 3, 4, Convert.ToInt32(_calcSkillList["Parry Ability"]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Parry Ability", Convert.ToInt32(_calcSkillList["Parry Ability"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 3, 3, Convert.ToInt32(_calcSkillList["Musical Theory"]), ref ranksNeeded);
+            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 4, 4, Convert.ToInt32(_calcSkillList["Musical Theory"]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Musical Theory", Convert.ToInt32(_calcSkillList["Musical Theory"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 3, 3, Convert.ToInt32(_calcSkillList["Vocals"]), ref ranksNeeded);
+            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 4, 4, Convert.ToInt32(_calcSkillList["Vocals"]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Vocals", Convert.ToInt32(_calcSkillList["Vocals"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 3, 3, Convert.ToInt32(_calcSkillList["Percussions"]), ref ranksNeeded);
+            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 4, 4, Convert.ToInt32(_calcSkillList["Percussions"]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Percussions", Convert.ToInt32(_calcSkillList["Percussions"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 3, 3, Convert.ToInt32(_calcSkillList["Winds"]), ref ranksNeeded);
+            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 4, 4, Convert.ToInt32(_calcSkillList["Winds"]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Winds", Convert.ToInt32(_calcSkillList["Winds"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 3, 3, Convert.ToInt32(_calcSkillList["Strings"]), ref ranksNeeded);
+            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 4, 4, Convert.ToInt32(_calcSkillList["Strings"]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Strings", Convert.ToInt32(_calcSkillList["Strings"])));
 
             //Lore Skills:
