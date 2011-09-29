@@ -12,7 +12,7 @@ namespace Standalone_Circle_Calc
         //Constant variable for the Properties of the plugin
         //At the top for easy changes.
         string _NAME = "Circle Calculator";
-        string _VERSION = "2.0.0";
+        string _VERSION = "2.0.1";
         string _AUTHOR = "VTCifer";
         string _DESCRIPTION = "Calculcates the circle requirments for different guilds.  It will also sort skills form highest to lowest.";
 

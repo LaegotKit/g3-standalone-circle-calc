@@ -99,7 +99,7 @@
             this.Normal.Size = new System.Drawing.Size(101, 17);
             this.Normal.TabIndex = 10;
             this.Normal.TabStop = true;
-            this.Normal.Text = "Normal (Defualt)";
+            this.Normal.Text = "Normal (Default)";
             this.Normal.UseVisualStyleBackColor = true;
             // 
             // lblDisplay
