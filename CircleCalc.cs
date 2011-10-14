@@ -12,7 +12,7 @@ namespace Standalone_Circle_Calc
         //Constant variable for the Properties of the plugin
         //At the top for easy changes.
         string _NAME = "Circle Calculator";
-        string _VERSION = "2.0.1";
+        string _VERSION = "2.0.2";
         string _AUTHOR = "VTCifer";
         string _DESCRIPTION = "Calculcates the circle requirments for different guilds.  It will also sort skills form highest to lowest.";
 
@@ -1261,12 +1261,13 @@ namespace Standalone_Circle_Calc
                             case "First Aid":
                             case "Foraging":
                             case "Hiding":
+                            case "Lockpicking":
                             case "Scouting":
                             case "Perception":
                             case "Skinning":
                             case "Stalking":
-                            case "Swimming":
                             case "Stealing":
+                            case "Swimming":
                                 if (Convert.ToInt32(skill.Value) > ranks)
                                 {
                                     skillName = skill.Key.ToString();
