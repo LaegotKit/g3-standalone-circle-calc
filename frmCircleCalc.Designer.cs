@@ -35,7 +35,7 @@
             this.cboSort = new System.Windows.Forms.ComboBox();
             this.Normal = new System.Windows.Forms.RadioButton();
             this.lblDisplay = new System.Windows.Forms.Label();
-            this.Post150Circle = new System.Windows.Forms.RadioButton();
+            this.Post200Circle = new System.Windows.Forms.RadioButton();
             this.NextCircle = new System.Windows.Forms.RadioButton();
             this.SuspendLayout();
             // 
@@ -112,16 +112,16 @@
             this.lblDisplay.TabIndex = 11;
             this.lblDisplay.Text = "Display Options:";
             // 
-            // Post150Circle
+            // Post200Circle
             // 
-            this.Post150Circle.AutoSize = true;
-            this.Post150Circle.Location = new System.Drawing.Point(25, 71);
-            this.Post150Circle.Name = "Post150Circle";
-            this.Post150Circle.Size = new System.Drawing.Size(164, 17);
-            this.Post150Circle.TabIndex = 12;
-            this.Post150Circle.TabStop = true;
-            this.Post150Circle.Text = "Show Reqs for skills past 150";
-            this.Post150Circle.UseVisualStyleBackColor = true;
+            this.Post200Circle.AutoSize = true;
+            this.Post200Circle.Location = new System.Drawing.Point(25, 71);
+            this.Post200Circle.Name = "Post200Circle";
+            this.Post200Circle.Size = new System.Drawing.Size(164, 17);
+            this.Post200Circle.TabIndex = 12;
+            this.Post200Circle.TabStop = true;
+            this.Post200Circle.Text = "Show Reqs for skills past 200";
+            this.Post200Circle.UseVisualStyleBackColor = true;
             // 
             // NextCircle
             // 
@@ -140,7 +140,7 @@
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(217, 191);
             this.Controls.Add(this.NextCircle);
-            this.Controls.Add(this.Post150Circle);
+            this.Controls.Add(this.Post200Circle);
             this.Controls.Add(this.lblDisplay);
             this.Controls.Add(this.Normal);
             this.Controls.Add(this.cboSort);
@@ -164,7 +164,7 @@
         public System.Windows.Forms.ComboBox cboSort;
         private System.Windows.Forms.Label lblDisplay;
         public System.Windows.Forms.RadioButton Normal;
-        public System.Windows.Forms.RadioButton Post150Circle;
+        public System.Windows.Forms.RadioButton Post200Circle;
         public System.Windows.Forms.RadioButton NextCircle;
     }
 }

@@ -21,7 +21,7 @@ namespace Standalone_Circle_Calc
         }
         private void btnOk_Click(object sender, EventArgs e)
         {
-            if (Post150Circle.Checked == true)
+            if (Post200Circle.Checked == true)
                 _host.SendText("#var CircleCalc.Display 1");
             else if (NextCircle.Checked == true)
                 _host.SendText("#var CircleCalc.Display 2");
