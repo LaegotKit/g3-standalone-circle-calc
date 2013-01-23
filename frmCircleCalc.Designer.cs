@@ -37,11 +37,14 @@
             this.lblDisplay = new System.Windows.Forms.Label();
             this.Post200Circle = new System.Windows.Forms.RadioButton();
             this.NextCircle = new System.Windows.Forms.RadioButton();
+            this.chkEcho = new System.Windows.Forms.CheckBox();
+            this.chkLog = new System.Windows.Forms.CheckBox();
+            this.chkParse = new System.Windows.Forms.CheckBox();
             this.SuspendLayout();
             // 
             // btnOk
             // 
-            this.btnOk.Location = new System.Drawing.Point(12, 153);
+            this.btnOk.Location = new System.Drawing.Point(12, 222);
             this.btnOk.Name = "btnOk";
             this.btnOk.Size = new System.Drawing.Size(75, 23);
             this.btnOk.TabIndex = 5;
@@ -51,7 +54,7 @@
             // 
             // btnCancel
             // 
-            this.btnCancel.Location = new System.Drawing.Point(130, 153);
+            this.btnCancel.Location = new System.Drawing.Point(130, 222);
             this.btnCancel.Name = "btnCancel";
             this.btnCancel.Size = new System.Drawing.Size(75, 23);
             this.btnCancel.TabIndex = 6;
@@ -62,7 +65,7 @@
             // chkGag
             // 
             this.chkGag.AutoSize = true;
-            this.chkGag.Location = new System.Drawing.Point(12, 119);
+            this.chkGag.Location = new System.Drawing.Point(12, 198);
             this.chkGag.Name = "chkGag";
             this.chkGag.Size = new System.Drawing.Size(128, 17);
             this.chkGag.TabIndex = 7;
@@ -134,11 +137,44 @@
             this.NextCircle.Text = "Next circle only";
             this.NextCircle.UseVisualStyleBackColor = true;
             // 
+            // chkEcho
+            // 
+            this.chkEcho.AutoSize = true;
+            this.chkEcho.Location = new System.Drawing.Point(12, 119);
+            this.chkEcho.Name = "chkEcho";
+            this.chkEcho.Size = new System.Drawing.Size(86, 17);
+            this.chkEcho.TabIndex = 14;
+            this.chkEcho.Text = "Echo Output";
+            this.chkEcho.UseVisualStyleBackColor = true;
+            // 
+            // chkLog
+            // 
+            this.chkLog.AutoSize = true;
+            this.chkLog.Location = new System.Drawing.Point(12, 142);
+            this.chkLog.Name = "chkLog";
+            this.chkLog.Size = new System.Drawing.Size(79, 17);
+            this.chkLog.TabIndex = 15;
+            this.chkLog.Text = "Log Output";
+            this.chkLog.UseVisualStyleBackColor = true;
+            // 
+            // chkParse
+            // 
+            this.chkParse.AutoSize = true;
+            this.chkParse.Location = new System.Drawing.Point(12, 164);
+            this.chkParse.Name = "chkParse";
+            this.chkParse.Size = new System.Drawing.Size(88, 17);
+            this.chkParse.TabIndex = 16;
+            this.chkParse.Text = "Parse Output";
+            this.chkParse.UseVisualStyleBackColor = true;
+            // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(217, 191);
+            this.ClientSize = new System.Drawing.Size(217, 254);
+            this.Controls.Add(this.chkParse);
+            this.Controls.Add(this.chkLog);
+            this.Controls.Add(this.chkEcho);
             this.Controls.Add(this.NextCircle);
             this.Controls.Add(this.Post200Circle);
             this.Controls.Add(this.lblDisplay);
@@ -166,5 +202,8 @@
         public System.Windows.Forms.RadioButton Normal;
         public System.Windows.Forms.RadioButton Post200Circle;
         public System.Windows.Forms.RadioButton NextCircle;
+        public System.Windows.Forms.CheckBox chkEcho;
+        public System.Windows.Forms.CheckBox chkLog;
+        public System.Windows.Forms.CheckBox chkParse;
     }
 }

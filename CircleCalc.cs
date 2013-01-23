@@ -12,7 +12,7 @@ namespace Standalone_Circle_Calc
         //Constant variable for the Properties of the plugin
         //At the top for easy changes.
         string _NAME = "Circle Calculator";
-        string _VERSION = "3.0.3";
+        string _VERSION = "3.1.1";
         string _AUTHOR = "VTCifer";
         string _DESCRIPTION = "Calculcates the circle requirments for different guilds.  It will also sort skills form highest to lowest.";
 
@@ -202,14 +202,14 @@ namespace Standalone_Circle_Calc
                         //circle over 500 or under 2 are not supported
                         if (_calcCircle > 500)
                         {
-                            _host.SendText("#echo");
-                            _host.SendText("#echo Circle Calculator: maximum circle is 500");
+                            SendOutput("");
+                            SendOutput("Circle Calculator: maximum circle is 500");
                             return "";
                         }
                         else if (_calcCircle < 2)
                         {
-                            _host.SendText("#echo");
-                            _host.SendText("#echo Circle Calculator: minimum circle is 2");
+                            SendOutput("");
+                            SendOutput("Circle Calculator: minimum circle is 2");
                             return "";
                         }
                         //if two spaces, then guild is also included
@@ -368,20 +368,20 @@ namespace Standalone_Circle_Calc
 
         private void DisplaySyntax()
         {
-            _host.SendText("#echo");
-            _host.SendText(@"#echo Standalone Circle Calculator(Ver:" + _VERSION + ") Usage:");
-            _host.SendText(@"#echo /calc [guild] [circle]");
-            _host.SendText(@"#echo """"    """" /calc (will calculate to one circle above you)");
-            _host.SendText(@"#echo """"    """" /calc <guild> (will calculate based on the guild you input)");
-            _host.SendText(@"#echo """"    """" /calc <circle> (will calculate what you need for the circle you input)");
-            _host.SendText(@"#echo """"    """" /calc <guild> <circle> (combination of the two above)");
-            _host.SendText(@"#echo """"  """" The guild name must be spelled out completely, but with no spaces(moonmage, warriormage).");
-            _host.SendText(@"#echo /sort [skillset] [rank]");
-            _host.SendText(@"#echo """"    """" /sort will sort your all sills");
-            _host.SendText(@"#echo """"    """" /sort <skillset> will sort the skills in the skillset");
-            _host.SendText(@"#echo """"    """" /sort <rank> will sort the skills greather than rank");
-            _host.SendText(@"#echo """"    """" /sort <skillset> <rank> will sort the skills in the skillset");
-            _host.SendText(@"#echo """"    """" <rank> must always be a positive integer");
+            SendOutput("");
+            SendOutput("Standalone Circle Calculator(Ver:" + _VERSION + ") Usage:");
+            SendOutput("/calc [guild] [circle]");
+            SendOutput("   /calc (will calculate to one circle above you)");
+            SendOutput("   /calc <guild> (will calculate based on the guild you input)");
+            SendOutput("   /calc <circle> (will calculate what you need for the circle you input)");
+            SendOutput("   /calc <guild> <circle> (combination of the two above)");
+            SendOutput("   The guild name must be spelled out completely, but with no spaces(moonmage, warriormage).");
+            SendOutput("/sort [skillset] [rank]");
+            SendOutput("   /sort will sort your all sills");
+            SendOutput("   /sort <skillset> will sort the skills in the skillset");
+            SendOutput("   /sort <rank> will sort the skills greather than rank");
+            SendOutput("   /sort <skillset> <rank> will sort the skills in the skillset");
+            SendOutput("   <rank> must always be a positive integer");
         }
 
         //Required for Plugin - 
@@ -459,7 +459,7 @@ namespace Standalone_Circle_Calc
                             }
                             catch (Exception ex)
                             {
-                                _host.SendText("#echo " + ex.ToString());
+                                SendOutput(ex.ToString());
                             }
                         }
                         else if (Text.Contains("%"))
@@ -513,6 +513,11 @@ namespace Standalone_Circle_Calc
         {
             Form1 form = new Form1(ref _host);
 
+            if (_host.get_Variable("CircleCalc.Sort") == "1")
+                form.cboSort.Text = "Bottom";
+            else
+                form.cboSort.Text = "Top";
+
             if (_host.get_Variable("CircleCalc.Display") == "1")
                 form.Post200Circle.Checked = true;
             else if(_host.get_Variable("CircleCalc.Display") == "2")
@@ -520,14 +525,23 @@ namespace Standalone_Circle_Calc
             else
                 form.Normal.Checked = true;
 
+            if (_host.get_Variable("CircleCalc.Echo") == "1")
+                form.chkEcho.Checked = true;
+            else
+                form.chkEcho.Checked = false;
+            if (_host.get_Variable("CircleCalc.Log") == "1")
+                form.chkLog.Checked = true;
+            else
+                form.chkLog.Checked = false;
+            if (_host.get_Variable("CircleCalc.Parse") == "1")
+                form.chkParse.Checked = true;
+            else
+                form.chkParse.Checked = false;
+            
             if (_host.get_Variable("CircleCalc.GagFunny") == "1")
                 form.chkGag.Checked = true;
             else
                 form.chkGag.Checked = false;
-            if (_host.get_Variable("CircleCalc.Sort") == "1")
-                form.cboSort.Text = "Bottom";
-            else
-                form.cboSort.Text = "Top";
 
                 if (parent != null)
                     form.MdiParent = parent;
@@ -665,6 +679,16 @@ namespace Standalone_Circle_Calc
                 _calcSkillList.Add(name, Convert.ToInt32(Math.Floor(dRank)));
             if (_sorting)
                 _sortSkillList.Add(name, dRank);
+        }
+
+        private void SendOutput(string output)
+        {
+            if (_host.get_Variable("CircleCalc.Parse") != "0")
+                _host.SendText("#parse " + output);
+            if (_host.get_Variable("CircleCalc.Log") != "0")
+                _host.SendText("#log \"" + output + "\"");
+            if (_host.get_Variable("CircleCalc.Echo") != "0")
+                _host.SendText("#echo \"" + output + "\"");
         }
 
         #endregion
@@ -859,8 +883,8 @@ namespace Standalone_Circle_Calc
                 circle = ((CircleReq)reqList[reqList.Count-1]).circle;
 
             //if (_host.get_Variable("CircleCalc.Sort") == "0")
-                _host.SendText("#echo Requirements for Circle " + circle.ToString() + ":");
-            _host.SendText("#echo");
+                SendOutput("Requirements for Circle " + circle.ToString() + ":");
+            SendOutput("");
 
             foreach (CircleReq req in reqList)
             {
@@ -868,12 +892,12 @@ namespace Standalone_Circle_Calc
                      (_host.get_Variable("CircleCalc.Sort") == "1" && req.circle == circle && LineBreak == false)) && 
                      _host.get_Variable("CircleCalc.Display") != "2" )
                 {
-                    _host.SendText("#echo");
+                    SendOutput("");
                     LineBreak = true;
                 }
 
                 if ((_host.get_Variable("CircleCalc.Display") == "1" || req.circle <= 200) && ((_host.get_Variable("CircleCalc.Display") != "2") || req.circle == circle) )
-                    _host.SendText("#echo You have enough " + req.name + " for Circle " + req.currentCircle + " and need " + (req.ranksNeeded - req.ranks).ToString() + " (" + req.ranksNeeded + ") ranks for Circle " + req.circle);
+                    SendOutput("You have enough " + req.name + " for Circle " + req.currentCircle + " and need " + (req.ranksNeeded - req.ranks).ToString() + " (" + req.ranksNeeded + ") ranks for Circle " + req.circle);
             }
             /*
             if (_host.get_Variable("CircleCalc.Sort") == "1")
@@ -883,9 +907,9 @@ namespace Standalone_Circle_Calc
             }
             */
 
-            _host.SendText("#echo");
-            _host.SendText("#echo TDPs Gained: " + String.Format("{0,6}", totalTDPs.ToString()));
-            _host.SendText("#echo Total Ranks: " + String.Format("{0,6}", totalRanks.ToString()));
+            SendOutput("");
+            SendOutput("TDPs Gained: " + String.Format("{0,6}", totalTDPs.ToString()));
+            SendOutput("Total Ranks: " + String.Format("{0,6}", totalRanks.ToString()));
             if (_host.get_Variable("CircleCalc.GagFunny") != "1")
             {
                 int seed = 0;
@@ -897,22 +921,22 @@ namespace Standalone_Circle_Calc
                 switch (_calcGuild)
                 {
                     case Guilds.None:
-                        _host.SendText("#echo Join a guild you loser.");
+                        SendOutput("Join a guild you loser.");
                         break;
                     case Guilds.Barbarian:
 
                         break;
                     case Guilds.Bard:
                         if (rand % 2 == 0)
-                            _host.SendText("#echo P.S. Bards suck(even with your poorly designed screams). Reroll.");
+                            SendOutput("P.S. Bards suck(even with your poorly designed screams). Reroll.");
                         else
-                            _host.SendText("#echo Shouldn't you be down at the pub?");
+                            SendOutput("Shouldn't you be down at the pub?");
                         break;
                     case Guilds.Cleric:
-                        _host.SendText("#echo Rezz Plz?");
+                        SendOutput("Rezz Plz?");
                         break;
                     case Guilds.Commoner:
-                        _host.SendText("#echo Join a guild you loser.");
+                        SendOutput("Join a guild you loser.");
                         break;
                     case Guilds.Empath:
                         break;
@@ -920,9 +944,9 @@ namespace Standalone_Circle_Calc
                         break;
                     case Guilds.Necromancer:
                         if (rand % 2 == 0)
-                            _host.SendText("#echo Don't you think it's time to give up the evil tea parties");
+                            SendOutput("Don't you think it's time to give up the evil tea parties");
                         else
-                            _host.SendText("#echo Sacrified enough puppies today?");
+                            SendOutput("Sacrified enough puppies today?");
                         break;
                     case Guilds.Paladin:
                         break;
@@ -933,10 +957,10 @@ namespace Standalone_Circle_Calc
                     case Guilds.Trader:
                         break;
                     case Guilds.WarriorMage:
-                        _host.SendText("#echo WM Strategy:  10 prep TC, 20 cast area, 30 prep CL, 40 cast area, 50 goto 10");
+                        SendOutput("WM Strategy:  10 prep TC, 20 cast area, 30 prep CL, 40 cast area, 50 goto 10");
                         break;
                     default:
-                        _host.SendText("#echo Do you break everything you touch?");
+                        SendOutput("Do you break everything you touch?");
                         break;
                 }
             }
@@ -947,22 +971,19 @@ namespace Standalone_Circle_Calc
         private void ShowRanks()
         {
             string format = "{0," + (-MaxRankLen).ToString() + "} - {1," + (MaxDigitLen) + ":F2}";
-            _host.SendText("#echo ");
+            SendOutput("");
             string ListText = "";
-            string ParseSkill = "";
             foreach (SkillRanks sr in sortList)
             {
-                ListText = "#echo \"" + String.Format(format, sr.name, sr.rank) + "\"";
-                ParseSkill = "#parse " + String.Format(format, sr.name, sr.rank);
-                _host.SendText(ListText);
-                _host.SendText(ParseSkill);
+                ListText = String.Format(format, sr.name, sr.rank);
+                SendOutput(ListText);
             }
 
-            _host.SendText("#echo");
+            SendOutput("");
             string TDPText = "";
             string TotalRanksText = "";
-            TDPText = "#echo TDPs Gained from ";
-            TotalRanksText = "#echo Total Ranks in ";
+            TDPText = "TDPs Gained from ";
+            TotalRanksText = "Total Ranks in ";
             if (_skillset == SkillSets.all)
             {
                 TDPText = TDPText + _skillset.ToString() + " skillsets";
@@ -974,9 +995,9 @@ namespace Standalone_Circle_Calc
                 TotalRanksText = TotalRanksText + "the " + _skillset.ToString() + " skillset";
             }
             TDPText = TDPText + ": " + String.Format("{0,6}", totalTDPs.ToString());
-            TotalRanksText = TotalRanksText + ": " + String.Format("{0,6}", totalRanks.ToString());
-            _host.SendText(TDPText);
-            _host.SendText(TotalRanksText);
+            TotalRanksText = TotalRanksText + ":   " + String.Format("{0,6}", totalRanks.ToString());
+            SendOutput(TDPText);
+            SendOutput(TotalRanksText);
 
             _skillset = SkillSets.all;
             _sorting = false;
@@ -1070,8 +1091,8 @@ namespace Standalone_Circle_Calc
                         break;
                     case Guilds.Commoner:
                     default:
-                        _host.SendText("#echo");
-                        _host.SendText("#echo /calc: Try joining a guild first.");
+                        SendOutput("");
+                        SendOutput("/calc: Try joining a guild first.");
                         return;
                 }
             }
@@ -1114,8 +1135,8 @@ namespace Standalone_Circle_Calc
                         break;
                     case Guilds.Commoner:
                     default:
-                        _host.SendText("#echo");
-                        _host.SendText("#echo /calc: Try joining a guild first.");
+                        SendOutput("");
+                        SendOutput("/calc: Try joining a guild first.");
                         return;
                 }
             }
@@ -1320,7 +1341,7 @@ namespace Standalone_Circle_Calc
                     {
                         switch (skill.Key.ToString())
                         {
-                            case "Augemntation":
+                            case "Augmentation":
                             case "Debilitation":
                             case "Warding":
                             case "Arcana":
@@ -1881,8 +1902,8 @@ namespace Standalone_Circle_Calc
 
             CalculateReq3_0(ref circle, ref currentCircle, 4, 4, 4, 4, 5, 13, Convert.ToInt32(_calcSkillList["Parry Ability"]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Parry Ability", Convert.ToInt32(_calcSkillList["Parry Ability"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 4, 5, 6, 6, 6, 15, Convert.ToInt32(_calcSkillList["Expertise"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Expertise", Convert.ToInt32(_calcSkillList["Expertise"])));
+            //CalculateReq3_0(ref circle, ref currentCircle, 4, 5, 6, 6, 6, 15, Convert.ToInt32(_calcSkillList["Expertise"]), ref ranksNeeded);
+            //reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Expertise", Convert.ToInt32(_calcSkillList["Expertise"])));
             CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList["Inner Fire"]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Inner Fire", Convert.ToInt32(_calcSkillList["Inner Fire"])));
             CalculateReq3_0(ref circle, ref currentCircle, 3, 4, 4, 5, 6, 15, Convert.ToInt32(_calcSkillList["Evasion"]), ref ranksNeeded);
@@ -2039,7 +2060,7 @@ namespace Standalone_Circle_Calc
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
             _calcSkillList.Remove(skill);
             skill = HighestWeapon3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
+            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
             _calcSkillList.Remove(skill);
 
@@ -2170,7 +2191,7 @@ namespace Standalone_Circle_Calc
             _calcSkillList.Remove(skill);
             skill = HighestMagic3_0(_calcSkillList);
             CalculateReq3_0(ref circle, ref currentCircle, 3, 3, 4, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiar Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
+            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
             _calcSkillList.Remove(skill);
             skill = HighestMagic3_0(_calcSkillList);
             CalculateReq3_0(ref circle, ref currentCircle, 0, 3, 3, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
@@ -2306,7 +2327,7 @@ namespace Standalone_Circle_Calc
             _calcSkillList.Remove(skill);
             skill = HighestSurvival3_0(_calcSkillList);
             CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiar Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
+            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
             _calcSkillList.Remove(skill);
             skill = HighestSurvival3_0(_calcSkillList);
             CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 1, 2, 2, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
@@ -2331,7 +2352,7 @@ namespace Standalone_Circle_Calc
             _calcSkillList.Remove(skill);
             skill = HighestLore3_0(_calcSkillList);
             CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Seconday Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
+            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
             _calcSkillList.Remove(skill);
             skill = HighestLore3_0(_calcSkillList);
             CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
@@ -2351,13 +2372,13 @@ namespace Standalone_Circle_Calc
 
             //Hard and Soft Skills:
             //          Astro   Scholarship
-            //001-010:  2       3
-            //011-030:  3       3
-            //031-070:  3       3
-            //071-100:  4       4
-            //101-150:  5       4
+            //001-010:  3       3
+            //011-030:  4       3
+            //031-070:  4       3
+            //071-100:  5       4
+            //101-150:  6       4
             //151 +  :  15      10
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 5, 15, Convert.ToInt32(_calcSkillList["Astrology"]), ref ranksNeeded);
+            CalculateReq3_0(ref circle, ref currentCircle, 3, 3, 4, 5, 6, 15, Convert.ToInt32(_calcSkillList["Astrology"]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Astrology", Convert.ToInt32(_calcSkillList["Astrology"])));
             CalculateReq3_0(ref circle, ref currentCircle, 3, 3, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList["Scholarship"]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Scholarship", Convert.ToInt32(_calcSkillList["Scholarship"])));
@@ -2376,7 +2397,7 @@ namespace Standalone_Circle_Calc
             _calcSkillList.Remove(skill);
             skill = HighestMagic3_0(_calcSkillList);
             CalculateReq3_0(ref circle, ref currentCircle, 4, 4, 4, 5, 6, 15, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Seconday Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
+            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
             _calcSkillList.Remove(skill);
             skill = HighestMagic3_0(_calcSkillList);
             CalculateReq3_0(ref circle, ref currentCircle, 3, 4, 4, 5, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
@@ -2416,7 +2437,7 @@ namespace Standalone_Circle_Calc
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
             _calcSkillList.Remove(skill);
             skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
+            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
             _calcSkillList.Remove(skill);
             skill = HighestSurvival3_0(_calcSkillList);
