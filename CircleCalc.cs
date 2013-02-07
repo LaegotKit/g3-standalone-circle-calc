@@ -12,7 +12,7 @@ namespace Standalone_Circle_Calc
         //Constant variable for the Properties of the plugin
         //At the top for easy changes.
         string _NAME = "Circle Calculator";
-        string _VERSION = "3.1.1";
+        string _VERSION = "3.1.2";
         string _AUTHOR = "VTCifer";
         string _DESCRIPTION = "Calculcates the circle requirments for different guilds.  It will also sort skills form highest to lowest.";
 
@@ -1896,7 +1896,7 @@ namespace Standalone_Circle_Calc
             //001-010:  4       4           1       3           1
             //011-030:  4       5           2       4           1
             //031-070:  4       6           3       4           2
-            //071-100:  4       6           4       5           2
+            //071-100:  4       6           3       5           2
             //101-150:  5       6           4       6           3
             //151 +  :  13      15          10      15          8
 
@@ -1904,7 +1904,7 @@ namespace Standalone_Circle_Calc
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Parry Ability", Convert.ToInt32(_calcSkillList["Parry Ability"])));
             //CalculateReq3_0(ref circle, ref currentCircle, 4, 5, 6, 6, 6, 15, Convert.ToInt32(_calcSkillList["Expertise"]), ref ranksNeeded);
             //reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Expertise", Convert.ToInt32(_calcSkillList["Expertise"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList["Inner Fire"]), ref ranksNeeded);
+            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList["Inner Fire"]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Inner Fire", Convert.ToInt32(_calcSkillList["Inner Fire"])));
             CalculateReq3_0(ref circle, ref currentCircle, 3, 4, 4, 5, 6, 15, Convert.ToInt32(_calcSkillList["Evasion"]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Evasion", Convert.ToInt32(_calcSkillList["Evasion"])));
@@ -1929,19 +1929,19 @@ namespace Standalone_Circle_Calc
             _calcSkillList.Remove(skill);
 
             //Weapon Skills:
-            //          1st     2nd     3rd     4th
-            //001-010:  4       4       2       1
-            //011-030:  5       5       3       2
-            //031-070:  6       6       3       2
-            //071-100:  6       6       4       3
-            //101-150:  6       6       5       4
-            //151 +  :  15      15      13      10
+            //          1st-2nd     3rd     4th
+            //001-010:  4           2       1
+            //011-030:  5           3       2
+            //031-070:  6           3       2
+            //071-100:  6           4       3
+            //101-150:  6           5       4
+            //151 +  :  15         13      10
             skill = HighestWeapon3_0(_calcSkillList);
             CalculateReq3_0(ref circle, ref currentCircle, 4, 5, 6, 6, 6, 15, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
             _calcSkillList.Remove(skill);
             skill = HighestWeapon3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 4, 5, 4, 6, 6, 15, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
+            CalculateReq3_0(ref circle, ref currentCircle, 4, 5, 6, 6, 6, 15, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
             _calcSkillList.Remove(skill);
             skill = HighestWeapon3_0(_calcSkillList);
@@ -1971,13 +1971,13 @@ namespace Standalone_Circle_Calc
             _calcSkillList.Remove(skill);
 
             //Survival Skills:
-            //          1st     2nd     3rd     4th
-            //001-010:  2       2       2       1
-            //011-030:  2       2       2       1
-            //031-070:  3       3       2       2
-            //071-100:  3       3       3       2
-            //101-150:  3       3       3       2
-            //151 +  :  8       8       8       5
+            //          1st-2nd     3rd     4th
+            //001-010:  2           2       1
+            //011-030:  2           2       1
+            //031-070:  3           2       2
+            //071-100:  3           3       2
+            //101-150:  3           3       2
+            //151 +  :  8           8       5
             skill = HighestSurvival3_0(_calcSkillList);
             CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 3, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
@@ -2020,18 +2020,20 @@ namespace Standalone_Circle_Calc
 
             // Hard and Soft Skills:
             //          Parry   Performance Tactics [Bardic Lore tbd]
-            //001-010:  2       3           2
-            //011-030:  3       3           3
-            //031-070:  3       4           3
-            //071-100:  4       4           4
+            //001-010:  2       4           2
+            //011-030:  3       4           3
+            //031-070:  3       5           3
+            //071-100:  4       5           4
             //101-150:  5       6           5
             //151 +  :  13      15          13
             CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 5, 13, Convert.ToInt32(_calcSkillList["Parry Ability"]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Parry Ability", Convert.ToInt32(_calcSkillList["Parry Ability"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 3, 4, 4, 6, 15, Convert.ToInt32(_calcSkillList["Performance"]), ref ranksNeeded);
+            CalculateReq3_0(ref circle, ref currentCircle, 4, 4, 5, 5, 6, 15, Convert.ToInt32(_calcSkillList["Performance"]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Performance", Convert.ToInt32(_calcSkillList["Performance"])));
             CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 5, 13, Convert.ToInt32(_calcSkillList["Tactics"]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tactics", Convert.ToInt32(_calcSkillList["Tactics"])));
+            //CalculateReq3_0(ref circle, ref currentCircle, ?, ?, ?, ?, ?, ?, Convert.ToInt32(_calcSkillList["Bardic Lore"]), ref ranksNeeded);
+            //reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Bardic Lore", Convert.ToInt32(_calcSkillList["Bardic Lore"])));
 
             //Armor Skills:
             //          1st     
@@ -2203,19 +2205,19 @@ namespace Standalone_Circle_Calc
             _calcSkillList.Remove(skill);
 
             //Survival Skills:
-            //          1st     2nd     3rd     4th
-            //001-010:  1       1       1       1
-            //011-030:  2       1       1       1
-            //031-070:  2       2       1       1
-            //071-100:  3       2       2       2
-            //101-150:  3       3       2       2
-            //151 +  :  8       8       5       5
+            //          1st     2nd     3rd-4th
+            //001-010:  1       1       1
+            //011-030:  2       1       1
+            //031-070:  2       2       1
+            //071-100:  3       2       2
+            //101-150:  3       3       2
+            //151 +  :  8       8       5
             skill = HighestSurvival3_0(_calcSkillList);
             CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
             _calcSkillList.Remove(skill);
             skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
+            CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 2, 2, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
             _calcSkillList.Remove(skill);
             skill = HighestSurvival3_0(_calcSkillList);
@@ -2310,13 +2312,13 @@ namespace Standalone_Circle_Calc
             _calcSkillList.Remove(skill);
 
             //Survival Skills:
-            //          1st     2nd     3rd     4th     5th
-            //001-010:  1       1       1       1       1
-            //011-030:  2       2       1       1       1
-            //031-070:  2       2       2       1       1
-            //071-100:  3       3       3       2       2
-            //101-150:  4       4       3       2       2
-            //151 +  :  10      10      8       5       5
+            //          1st-2nd     3rd     4th-5th
+            //001-010:  1           1       1
+            //011-030:  2           1       1
+            //031-070:  2           2       1
+            //071-100:  3           3       2
+            //101-150:  4           3       2
+            //151 +  :  10          8       5
             skill = HighestSurvival3_0(_calcSkillList);
             CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
@@ -2378,19 +2380,19 @@ namespace Standalone_Circle_Calc
             //071-100:  5       4
             //101-150:  6       4
             //151 +  :  15      10
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 3, 4, 5, 6, 15, Convert.ToInt32(_calcSkillList["Astrology"]), ref ranksNeeded);
+            CalculateReq3_0(ref circle, ref currentCircle, 3, 4, 4, 5, 6, 15, Convert.ToInt32(_calcSkillList["Astrology"]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Astrology", Convert.ToInt32(_calcSkillList["Astrology"])));
             CalculateReq3_0(ref circle, ref currentCircle, 3, 3, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList["Scholarship"]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Scholarship", Convert.ToInt32(_calcSkillList["Scholarship"])));
 
             //Magic Skills:
-            //          1st     2nd     3rd     4th     5th     6th     7th
-            //001-010:  4       4       3       2       0       0       0
-            //011-030:  4       4       4       3       3       3       0
-            //031-070:  5       4       4       4       3       3       3
-            //071-100:  6       5       5       5       4       4       3
-            //101-150:  7       6       5       5       5       5       4
-            //151 +  :  18      15      13      13      13      13      10
+            //          1st     2nd     3rd     4th     5th-6th     7th
+            //001-010:  4       4       3       2       0           0
+            //011-030:  4       4       4       3       3           0
+            //031-070:  5       4       4       4       3           3
+            //071-100:  6       5       5       5       4           3
+            //101-150:  7       6       5       5       5           4
+            //151 +  :  18      15      13      13      13          10
             skill = HighestMagic3_0(_calcSkillList);
             CalculateReq3_0(ref circle, ref currentCircle, 4, 4, 5, 6, 7, 18, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
@@ -2417,7 +2419,7 @@ namespace Standalone_Circle_Calc
             _calcSkillList.Remove(skill);
             skill = HighestMagic3_0(_calcSkillList);
             CalculateReq3_0(ref circle, ref currentCircle, 0, 0, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
+            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "7th Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
             _calcSkillList.Remove(skill);
 
             //Survival Skills:
@@ -2425,7 +2427,7 @@ namespace Standalone_Circle_Calc
             //001-010:  2       2       2       2       0
             //011-030:  3       3       2       2       2
             //031-070:  3       3       3       2       2
-            //071-100:  4       4       4       3       3
+            //071-100:  4       4       3       3       3
             //101-150:  5       4       4       3       3
             //151 +  :  13      10      10      8       8
             skill = HighestSurvival3_0(_calcSkillList);
@@ -2437,7 +2439,7 @@ namespace Standalone_Circle_Calc
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
             _calcSkillList.Remove(skill);
             skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
+            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
             _calcSkillList.Remove(skill);
             skill = HighestSurvival3_0(_calcSkillList);
@@ -2463,11 +2465,11 @@ namespace Standalone_Circle_Calc
             _calcSkillList.Remove(skill);
             skill = HighestLore3_0(_calcSkillList);
             CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
+            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
             _calcSkillList.Remove(skill);
             skill = HighestLore3_0(_calcSkillList);
             CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
+            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
             _calcSkillList.Remove(skill);
         }
 
@@ -2490,7 +2492,7 @@ namespace Standalone_Circle_Calc
             //151 +  :  5               13      15
             CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 2, 2, 5, Convert.ToInt32(_calcSkillList["Small Edged"]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Small Edged", Convert.ToInt32(_calcSkillList["Small Edged"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 3, 4, 5, 11, Convert.ToInt32(_calcSkillList["Targeted Magic"]), ref ranksNeeded);
+            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 3, 4, 5, 13, Convert.ToInt32(_calcSkillList["Targeted Magic"]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Targeted Magic", Convert.ToInt32(_calcSkillList["Targeted Magic"])));
             CalculateReq3_0(ref circle, ref currentCircle, 3, 4, 4, 5, 6, 15, Convert.ToInt32(_calcSkillList["Thanatology"]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Thanatology", Convert.ToInt32(_calcSkillList["Thanatology"])));
@@ -2509,13 +2511,13 @@ namespace Standalone_Circle_Calc
             _calcSkillList.Remove(skill);
 
             //Magic Skills:
-            //          1st     2nd     3rd     4th     5th
-            //001-010:  3       3       2       2       0
-            //011-030:  4       3       3       3       0
-            //031-070:  4       4       3       3       3
-            //071-100:  5       5       4       4       4
-            //101-150:  6       6       5       5       5
-            //151 +  :  15      15      13      13      13
+            //          1st     2nd     3rd-4th     5th
+            //001-010:  3       3       2           0
+            //011-030:  4       3       3           0
+            //031-070:  4       4       3           3
+            //071-100:  5       5       4           4
+            //101-150:  6       6       5           5
+            //151 +  :  15      15      13          13
             skill = HighestMagic3_0(_calcSkillList);
             CalculateReq3_0(ref circle, ref currentCircle, 3, 4, 4, 5, 6, 15, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
@@ -2538,13 +2540,13 @@ namespace Standalone_Circle_Calc
             _calcSkillList.Remove(skill);
 
             //Survival Skills:
-            //          1st     2nd     3rd     4th     5th     6th     7th
-            //001-010:  4       4       3       3       3       3       2
-            //011-030:  4       4       4       4       4       3       3
-            //031-070:  5       5       4       4       4       4       3
-            //071-100:  5       5       5       5       5       4       4
-            //101-150:  6       6       5       5       5       5       4
-            //151 +  :  15      15      13      13      13      13      10
+            //          1st-2nd     3rd-5th     6th     7th
+            //001-010:  4           3           3       2
+            //011-030:  4           4           3       3
+            //031-070:  5           4           4       3
+            //071-100:  5           5           4       4
+            //101-150:  6           5           5       4
+            //151 +  :  15          13          13      10
             skill = HighestSurvival3_0(_calcSkillList);
             CalculateReq3_0(ref circle, ref currentCircle, 4, 4, 5, 5, 6, 15, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
@@ -2619,7 +2621,7 @@ namespace Standalone_Circle_Calc
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Evasion", Convert.ToInt32(_calcSkillList["Evasion"])));
             CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList["Scholarship"]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Scholarship", Convert.ToInt32(_calcSkillList["Scholarship"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 3, 3, 4, 19, Convert.ToInt32(_calcSkillList["Tactics"]), ref ranksNeeded);
+            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList["Tactics"]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tactics", Convert.ToInt32(_calcSkillList["Tactics"])));
 
             //Armor Skills:
@@ -2678,13 +2680,13 @@ namespace Standalone_Circle_Calc
             _calcSkillList.Remove(skill);
 
             //Survival Skills:
-            //          1st     2nd     3rd     4th
-            //001-010:  1       1       1       1
-            //011-030:  2       1       1       1
-            //031-070:  2       2       1       1
-            //071-100:  3       2       2       2
-            //101-150:  3       3       2       2
-            //151 +  :  8       8       5       5
+            //          1st     2nd     3rd-4th
+            //001-010:  1       1       1
+            //011-030:  2       1       1
+            //031-070:  2       2       1
+            //071-100:  3       2       2
+            //101-150:  3       3       2
+            //151 +  :  8       8       5
             skill = HighestSurvival3_0(_calcSkillList);
             CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
@@ -2745,7 +2747,7 @@ namespace Standalone_Circle_Calc
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Defending", Convert.ToInt32(_calcSkillList["Defending"])));
             CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList["Parry Ability"]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Parry Ability", Convert.ToInt32(_calcSkillList["Parry Ability"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 2, 4, 4, 10, Convert.ToInt32(_calcSkillList["Scouting"]), ref ranksNeeded);
+            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList["Scouting"]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Scouting", Convert.ToInt32(_calcSkillList["Scouting"])));
 
             //Armor Skills:
@@ -2783,13 +2785,13 @@ namespace Standalone_Circle_Calc
             _calcSkillList.Remove(skill);
 
             //Magic Skills:
-            //          1st     2nd     3rd
-            //001-010:  1       1       1
-            //011-030:  2       2       1
-            //031-070:  2       2       2
-            //071-100:  3       3       2
-            //101-150:  3       3       3
-            //151 +  :  8       8       8
+            //          1st-2nd     3rd
+            //001-010:  1           1
+            //011-030:  2           1
+            //031-070:  2           2
+            //071-100:  3           2
+            //101-150:  3           3
+            //151 +  :  8           8
             skill = HighestMagic3_0(_calcSkillList);
             CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
@@ -3193,7 +3195,6 @@ namespace Standalone_Circle_Calc
             CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 2, 2, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
             _calcSkillList.Remove(skill);
-
             skill = HighestSurvival3_0(_calcSkillList);
             CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 1, 2, 2, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
