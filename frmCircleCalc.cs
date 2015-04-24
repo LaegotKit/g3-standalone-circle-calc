@@ -9,11 +9,11 @@ using System.Windows.Forms;
 
 namespace Standalone_Circle_Calc
 {
-    public partial class Form1 : Form
+    public partial class frmCicleCalc : Form
     {
         private GeniePlugin.Interfaces.IHost _host;
 
-        public Form1(ref GeniePlugin.Interfaces.IHost host)
+        public frmCicleCalc(ref GeniePlugin.Interfaces.IHost host)
         {
             InitializeComponent();
 

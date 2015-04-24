@@ -1,6 +1,6 @@
 ﻿namespace Standalone_Circle_Calc
 {
-    partial class Form1
+    partial class frmCicleCalc
     {
         /// <summary>
         /// Required designer variable.
@@ -167,7 +167,7 @@
             this.chkParse.Text = "Parse Output";
             this.chkParse.UseVisualStyleBackColor = true;
             // 
-            // Form1
+            // frmCicleCalc
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
@@ -184,7 +184,7 @@
             this.Controls.Add(this.chkGag);
             this.Controls.Add(this.btnCancel);
             this.Controls.Add(this.btnOk);
-            this.Name = "Form1";
+            this.Name = "frmCicleCalc";
             this.Text = "Circle Calculator";
             this.ResumeLayout(false);
             this.PerformLayout();

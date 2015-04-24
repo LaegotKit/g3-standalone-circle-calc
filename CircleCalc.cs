@@ -1,36 +1,75 @@
-﻿using System;
+﻿//HMACSHA1
+using System;
 using System.Collections;
 using GeniePlugin.Interfaces;
 using System.Xml;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
+using System.IO;
+using System.Security.Cryptography;
+using System.Security.Cryptography.Xml;
 
 namespace Standalone_Circle_Calc
 {
-    public class Class1 : IPlugin
+    public class CircleCalc : IPlugin
     {
         //Constant variable for the Properties of the plugin
         //At the top for easy changes.
         string _NAME = "Circle Calculator";
-        string _VERSION = "3.1.2";
+        string _VERSION = "4.0.6b";
         string _AUTHOR = "VTCifer";
         string _DESCRIPTION = "Calculcates the circle requirments for different guilds.  It will also sort skills form highest to lowest.";
 
         public IHost _host;                             //Required for plugin
         public System.Windows.Forms.Form _parent;       //Required for plugin
-        
+
+        bool _reqsLoaded = false;
+        string _reqsAuthor = "";
+        string _reqsVer = "0.0";
+
+        bool _sortLoaded = false;
+        string _sortAuthor = "";
+        string _sortVer = "0.0";
+
+        bool _debug = false;
+        string _pluginPath = "";
+        //Used in storing of Reqs, Hard, Soft, TopN
+        class ReqType
+        {
+            public string Name;             //Display Name/Name of Skill
+            public string Skillset;         //Group the skill belongs to in TopN
+            public int Circles1to10;        //Circles 1-0
+            public int Circles11to30;       //Cirlces 11-30
+            public int Circles31to70;       //Circles 31-70
+            public int Circles71to100;      //Circles 71-100
+            public int Circles101to150;     //Circles101-150
+            public int Circles151Up;        //Circles Higher than 150
+        }
+        class SortSkillGroup
+        {
+            public string Name;
+            public ArrayList Skills = new ArrayList();
+            public SkillSets Skillset;
+        };
+
+        //Stores all the requirements and the Groupings for a guild used in global hashtable GuildReqList
+        class GuildType
+        {
+            public Hashtable Skillsets = new Hashtable();       //filled with Skillset names, key is Skill name
+            public Hashtable HardReqs = new Hashtable();        //filled with ReqTypes, key is name
+            public Hashtable SoftReqs = new Hashtable();        //filled with ReqTypes, key is name
+            public ArrayList TopN = new ArrayList();            //filled with ReqTypes, no key, indexed by number
+        }
+
+        private Hashtable _GuildNameList = new Hashtable();     //filled with guild names, key is shortname
+        private Hashtable _GuildReqList = new Hashtable();      //filled with guildtypes, key is string
+        Hashtable _GroupNameList = new Hashtable();
+        Hashtable _SortGroupList = new Hashtable();
+        SortSkillGroup _CurrentSortGroup = new SortSkillGroup();
+
         #region Circle Calc Members
 
-        private Guilds _guild = Guilds.Commoner;        //
-        private Guilds _calcGuild = Guilds.Commoner;    //Default Guild set to Commonder
-        private SkillSets _skillset = SkillSets.all;    //Default is sort all
-        private int _calcCircle = 0;                    //
-        private bool _calculating = false;              //
-        private bool _sorting = false;                  //
-        private bool _parsing = false;                  //
-
-        private bool _enabled = true;                   // enabled appears unused at the moment
-
+/*
         private enum Guilds
         {
             None,
@@ -47,6 +86,12 @@ namespace Standalone_Circle_Calc
             WarriorMage,
             Necromancer
         };
+        private Guilds _guild = Guilds.Commoner;        //
+        private Guilds _calcGuildName = Guilds.Commoner;    //Default Guild set to Commonder
+*/
+        private string _calcGuildName = "";
+        private GuildType _calcGuild = new GuildType();
+        private Hashtable _calcSkillsets = new Hashtable();   //filled with hashtable of skills, key is skillset name.  internal hashtable is keyed on skill name
 
         private enum SkillSets
         {
@@ -59,6 +104,15 @@ namespace Standalone_Circle_Calc
             none
         };
 
+        private SkillSets _skillset = SkillSets.all;    //Default is sort all
+        private int _calcCircle = 0;                    //
+        private bool _calculating = false;              //
+        private bool _sorting = false;                  //
+        private bool _parsing = false;                  //
+
+        private bool _enabled = true;                   // 
+
+/*
         //Class Skill
         //Used for storing all skill related info
         //Used in a hashtable whose key is the name of the skill
@@ -76,6 +130,7 @@ namespace Standalone_Circle_Calc
             public int sortLR = 0;      //Ordered value based on Reading sort (Left to Right)
             public int sortTB = 0;      //Ordered value based on top to bottom, THEN left to right 
         }
+*/
         #endregion
 
         #region IPlugin Properties
@@ -160,6 +215,80 @@ namespace Standalone_Circle_Calc
             if (_host.get_Variable("CircleCalc.GagFunny") == "")
                 _host.SendText("#var CircleCalc.GagFunny 0");
 
+            _pluginPath = _host.get_Variable("PluginPath");
+            if (_pluginPath != "\\")
+                _pluginPath += "\\";
+
+            LoadReqsfromXML();
+            LoadSortfromXML();
+/*
+            if (_reqsLoaded)
+            {
+                _host.EchoText("");
+                _host.EchoText("Beginning debug output:");
+                ICollection Keys = _GuildNameList.Keys;
+                GuildType tempGuild;
+                ArrayList tempSkillset;
+                ReqType tempReq;
+                foreach (string key in Keys)
+                    _host.EchoText("Shortname: " + key + " Guildname: " + _GuildNameList[key].ToString());
+
+                Keys = _GuildReqList.Keys;
+                foreach (string key in Keys)
+                {
+                    tempGuild = (GuildType)_GuildReqList[key];
+                    _host.EchoText("Guild: " + key);
+                    _host.EchoText("Skillsets:");
+                    ICollection Keys2 = tempGuild.Skillsets.Keys;
+                    foreach (string key2 in Keys2)
+                    {
+                        _host.EchoText("  Skillset: " + key2);
+                        tempSkillset = (ArrayList)tempGuild.Skillsets[key2];
+                        foreach (string skill in tempSkillset)
+                            _host.EchoText("    " + skill);
+                    }
+                    _host.EchoText("Reqs:");
+                    _host.EchoText("  Hard:");
+                    Keys2 = tempGuild.HardReqs.Keys;
+                    foreach (string key2 in Keys2)
+                    {
+                        _host.EchoText("    " + key2 + ":");
+                        tempReq = (ReqType)tempGuild.HardReqs[key2];
+                        _host.EchoText("      1-10:" + tempReq.Circles1to10.ToString());
+                        _host.EchoText("      11-30:" + tempReq.Circles11to30.ToString());
+                        _host.EchoText("      31-70:" + tempReq.Circles31to70.ToString());
+                        _host.EchoText("      71-100:" + tempReq.Circles71to100.ToString());
+                        _host.EchoText("      101-150:" + tempReq.Circles101to150.ToString());
+                        _host.EchoText("      151+:" + tempReq.Circles151Up.ToString());
+                    }
+                    _host.EchoText("  Soft:");
+                    Keys2 = tempGuild.SoftReqs.Keys;
+                    foreach (string key2 in Keys2)
+                    {
+                        _host.EchoText("    " + key2 + ":");
+                        tempReq = (ReqType)tempGuild.SoftReqs[key2];
+                        _host.EchoText("      1-10:" + tempReq.Circles1to10.ToString());
+                        _host.EchoText("      11-30:" + tempReq.Circles11to30.ToString());
+                        _host.EchoText("      31-70:" + tempReq.Circles31to70.ToString());
+                        _host.EchoText("      71-100:" + tempReq.Circles71to100.ToString());
+                        _host.EchoText("      101-150:" + tempReq.Circles101to150.ToString());
+                        _host.EchoText("      151+:" + tempReq.Circles151Up.ToString());
+                    }
+                    _host.EchoText("  N:");
+                    foreach (ReqType Req in tempGuild.TopN)
+                    {
+                        _host.EchoText("    " + Req.Name + ":");
+                        _host.EchoText("      Skillset: " + Req.Skillset);
+                        _host.EchoText("      1-10:" + Req.Circles1to10.ToString());
+                        _host.EchoText("      11-30:" + Req.Circles11to30.ToString());
+                        _host.EchoText("      31-70:" + Req.Circles31to70.ToString());
+                        _host.EchoText("      71-100:" + Req.Circles71to100.ToString());
+                        _host.EchoText("      101-150:" + Req.Circles101to150.ToString());
+                        _host.EchoText("      151+:" + Req.Circles151Up.ToString());
+                    }
+                }
+            }
+*/
         }
 
         //Required for Plugin - Called when user enters text in the command box
@@ -170,19 +299,46 @@ namespace Standalone_Circle_Calc
         public string ParseInput(string Text)
         {
             //User asking for help with commands 
-            if (Text == "/cc ?" || Text == "/calc ?")
+            if (Text == "/cc ?" || Text == "/calc ?" || Text == "/cc")
             {
                 DisplaySyntax();
                 return "";
             }
 
-            //Start Calculating circle
-            if (Text.StartsWith("/calc"))
+            //help/system commands
+            if (Text.StartsWith("/cc "))
             {
+
                 //Clean Input of leading/trailing whitespace
                 Text = Text.Trim();
 
-                string guild = "";
+                if (Text == "/cc reload")
+                {
+                    LoadReqsfromXML();
+                    LoadSortfromXML();
+                }
+                else if (Text == "/cc reloadreqs")
+                    LoadReqsfromXML();
+                else if (Text == "/cc reloadsort")
+                    LoadSortfromXML();
+                else if (Text == "/cc debug")
+                {
+                    _debug = !_debug;
+                    SendOutput("Debug toggled.  Now set to " + _debug+ ".");
+                }
+                else
+                    DisplaySyntax();
+                return "";
+            }
+
+            //Start Calculating circle
+            if (Text.StartsWith("/calc ") || Text == "/calc")
+            {
+                _calcGuildName = _host.get_Variable("CircleCalc.Guild");
+                    
+                //Clean Input of leading/trailing whitespace
+                Text = Text.Trim();
+
                 Regex exp = new Regex(" ");
                 int space = exp.Matches(Text).Count;
                 //check for proper syntax (more than two spaces = bad syntax)
@@ -215,12 +371,11 @@ namespace Standalone_Circle_Calc
                         //if two spaces, then guild is also included
                         if (space == 2)
                         {
-                            //read guild from the line and convert it to a Guilds type (class Guilds)
-                            guild = Text.Substring(Text.IndexOf(" ") + 1, Text.LastIndexOf(" ") - Text.IndexOf(" ") - 1);
-                            _calcGuild = GetGuild(guild);
+                            //read guild from the line
+                            _calcGuildName = Text.Substring(Text.IndexOf(" ") + 1, Text.LastIndexOf(" ") - Text.IndexOf(" ") - 1);
 
-                            //commoner not a supported guild to calc agaisnt nor is none
-                            if (_calcGuild == Guilds.Commoner || _calcGuild == Guilds.None)
+                            //if you can't find the guild
+                            if (!GetGuild(_calcGuildName))
                             {
                                 DisplaySyntax();
                                 return "";
@@ -233,6 +388,22 @@ namespace Standalone_Circle_Calc
                             return Text;
                         }
 
+                        //check if default guild was set in Genie
+                        if (_calcGuildName != "")
+                        {
+                            //if you can't find the guild
+                            if (!GetGuild(_calcGuildName))
+                            {
+                                DisplaySyntax();
+                                return "";
+                            }
+
+                            //set Calculating to tue, used in parsing 
+                            _calculating = true;
+                            //Sends exp 0 to get all skills with ranks
+                            Text = "exp 0";
+                            return Text;
+                        }
                         //set Calculating to tue, used in parsing
                         _calculating = true;
                         //Sends info to get the guild to calculate against
@@ -241,7 +412,7 @@ namespace Standalone_Circle_Calc
                     }
                     //catch the thrown exception if trying to convert text to a number
                     //means guild is at end and not a circle
-                    catch (Exception ex)
+                    catch 
                     {
                         //if last item is a guild, and there is more than one space, syntax is wrong
                         if (space > 1)
@@ -252,11 +423,10 @@ namespace Standalone_Circle_Calc
 
 
                         //get the guild from the line to calc against
-                        guild = Text.Substring(Text.IndexOf(" ") + 1, Text.Length - 1 - Text.IndexOf(" "));
-                        _calcGuild = GetGuild(guild);
-
-                        //Invalid guilds to specify: Commoner and None
-                        if (_calcGuild == Guilds.Commoner || _calcGuild == Guilds.None)
+                        _calcGuildName = Text.Substring(Text.IndexOf(" ") + 1, Text.Length - 1 - Text.IndexOf(" "));
+                        
+                        //If you cannot find the guild to calculate against
+                        if (!GetGuild(_calcGuildName))
                         {
                             DisplaySyntax();
                             return "";
@@ -270,6 +440,24 @@ namespace Standalone_Circle_Calc
                 }
                 else
                 {
+                    //check if default guild was set in Genie
+                    if (_calcGuildName != "")
+                    {
+                        //if you can't find the guild
+                        if (!GetGuild(_calcGuildName))
+                        {
+                            DisplaySyntax();
+                            return "";
+                        }
+
+                        //set Calculating to tue, used in parsing 
+                        _calculating = true;
+                        //Sends exp 0 to get all skills with ranks
+                        Text = "exp 0";
+                        return Text;
+                    }
+
+                    //if you got this far, it means the command was simply "calc"
                     //set Calculating to tue, used in parsing
                     _calculating = true;
                     Text = "info";
@@ -285,6 +473,11 @@ namespace Standalone_Circle_Calc
                 Text = Text.Trim();
                 _skillset = SkillSets.all;
                 int _calcRank = 1;
+
+                //clear out any double spaces in the command line
+                while (Text.Contains("  "))
+                    Text = Text.Replace("  ", " ");
+
                 Regex exp = new Regex(" ");
                 int space = exp.Matches(Text).Count;
                 //check for proper syntax (more than two spaces = bad syntax)
@@ -317,8 +510,27 @@ namespace Standalone_Circle_Calc
                             _skillset = GetSkillSet(skillset);
                             if (_skillset == SkillSets.none)
                             {
-                                DisplaySyntax();
-                                return "";
+                                if (!_sortLoaded)
+                                {
+                                    SendOutput("Invalid sorting group!");
+                                    SendOutput("Custom sorting is disabled due to no sorting file loaded.");
+                                    return "";
+                                }
+                                else if (!_GroupNameList.ContainsKey(skillset))
+                                {
+                                    SendOutput("Invalid sorting group!");
+                                    return "";
+                                }
+                                else
+                                {
+                                    _CurrentSortGroup = ((SortSkillGroup)_SortGroupList[_GroupNameList[skillset]]);
+                                    if (_CurrentSortGroup.Skillset != SkillSets.all)
+                                        Text = "exp " + _CurrentSortGroup.Skillset.ToString() + " " + _calcRank.ToString();
+                                    else
+                                        Text = "exp " + _calcRank.ToString();
+                                    _sorting = true;
+                                    return Text;
+                                }
                             }
 
                             Text = "exp " + _skillset.ToString() + " " + _calcRank.ToString();
@@ -333,7 +545,7 @@ namespace Standalone_Circle_Calc
                     }
                     //catch the thrown exception if trying to convert text to a number
                     //means skillset should be at the end of the line
-                    catch (Exception ex)
+                    catch 
                     {
                         //if last item is not a number, and there is more than one spce, syntax is wrong
                         if(space > 1)
@@ -346,8 +558,24 @@ namespace Standalone_Circle_Calc
                         _skillset = GetSkillSet(skillset);
                         if (_skillset == SkillSets.none)
                         {
-                            DisplaySyntax();
-                            return "";
+                            if (!_sortLoaded)
+                            {
+                                SendOutput("Invalid sorting group!");
+                                SendOutput("Custom sorting is disabled due to no sorting file loaded.");
+                                return "";
+                            }
+                            else if (!_GroupNameList.ContainsKey(skillset))
+                            {
+                                SendOutput("Invalid sorting group!");
+                                return "";
+                            }
+                            else
+                            {
+                                _CurrentSortGroup = ((SortSkillGroup)_SortGroupList[_GroupNameList[skillset]]);
+                                Text = "exp " + _CurrentSortGroup.Skillset.ToString() + " all";
+                                _sorting = true;
+                                return Text;
+                            }
                         }
 
                         Text = "exp " + _skillset.ToString() + " all";
@@ -370,6 +598,8 @@ namespace Standalone_Circle_Calc
         {
             SendOutput("");
             SendOutput("Standalone Circle Calculator(Ver:" + _VERSION + ") Usage:");
+            SendOutput("/cc ? (shows this help");
+            SendOutput("/cc reload[reqs|sort] (attempts to reload the reqs and/or the sorting data)");
             SendOutput("/calc [guild] [circle]");
             SendOutput("   /calc (will calculate to one circle above you)");
             SendOutput("   /calc <guild> (will calculate based on the guild you input)");
@@ -377,10 +607,10 @@ namespace Standalone_Circle_Calc
             SendOutput("   /calc <guild> <circle> (combination of the two above)");
             SendOutput("   The guild name must be spelled out completely, but with no spaces(moonmage, warriormage).");
             SendOutput("/sort [skillset] [rank]");
-            SendOutput("   /sort will sort your all sills");
-            SendOutput("   /sort <skillset> will sort the skills in the skillset");
-            SendOutput("   /sort <rank> will sort the skills greather than rank");
-            SendOutput("   /sort <skillset> <rank> will sort the skills in the skillset");
+            SendOutput("   /sort (will sort your all sills)");
+            SendOutput("   /sort <skillset> (will sort the skills in the skillset)");
+            SendOutput("   /sort <rank> (will sort the skills greather than rank)");
+            SendOutput("   /sort <skillset> <rank> (will sort the skills in the skillset)");
             SendOutput("   <rank> must always be a positive integer");
         }
 
@@ -397,49 +627,13 @@ namespace Standalone_Circle_Calc
                 {
                     if (_calculating == true && Text.StartsWith("Name: ") && Text.Contains("Guild: "))
                     {
-                        switch (Text.Substring(Text.IndexOf("Guild: ") + 7).Trim())
+                        _calcGuildName = Text.Substring(Text.IndexOf("Guild: ") + 7).Trim();
+                        if (!GetGuild(_calcGuildName))
                         {
-                            case "Barbarian":
-                                _guild = Guilds.Barbarian;
-                                break;
-                            case "Bard":
-                                _guild = Guilds.Bard;
-                                break;
-                            case "Moon Mage":
-                                _guild = Guilds.MoonMage;
-                                break;
-                            case "Thief":
-                                _guild = Guilds.Thief;
-                                break;
-                            case "Empath":
-                                _guild = Guilds.Empath;
-                                break;
-                            case "Trader":
-                                _guild = Guilds.Trader;
-                                break;
-                            case "Ranger":
-                                _guild = Guilds.Ranger;
-                                break;
-                            case "Cleric":
-                                _guild = Guilds.Cleric;
-                                break;
-                            case "Warrior Mage":
-                                _guild = Guilds.WarriorMage;
-                                break;
-                            case "Necromancer":
-                                _guild = Guilds.Necromancer;
-                                break;
-                            case "Paladin":
-                                _guild = Guilds.Paladin;
-                                break;
-                            case "Commoner":
-                                _guild = Guilds.Commoner;
-                                break;
-                            default:
-                                _guild = Guilds.Commoner;
-                                break;
+                            DisplaySyntax();
+                            _calculating = false;
+                            return Text;
                         }
-                        _calcGuild = _guild;
                         _host.SendText("exp 0");
                     }
 
@@ -453,7 +647,10 @@ namespace Standalone_Circle_Calc
                             try
                             {
                                 if (_calculating)
-                                    CalculateCircle();
+                                {
+                                    CalculateCirclebyXML();
+                                    //CalculateCircle();
+                                }
                                 if (_sorting)
                                     SortSkills();
                             }
@@ -481,7 +678,7 @@ namespace Standalone_Circle_Calc
                         _parsing = true;
                 }
             }
-            catch (Exception ex)
+            catch
             {
             }
             return Text;
@@ -511,7 +708,7 @@ namespace Standalone_Circle_Calc
 
         public void OpenSettingsWindow(System.Windows.Forms.Form parent)
         {
-            Form1 form = new Form1(ref _host);
+            frmCicleCalc form = new frmCicleCalc(ref _host);
 
             if (_host.get_Variable("CircleCalc.Sort") == "1")
                 form.cboSort.Text = "Bottom";
@@ -553,85 +750,6 @@ namespace Standalone_Circle_Calc
 
         #region Custom Parse/Display methods
 
-        private int GetLearningRateInt(string skillRate)
-        {
-            switch (skillRate)
-            {
-                case "clear":
-                    return 0;
-                case "dabbling":
-                    return 1;
-                case "perusing":
-                    return 2;
-                case "learning":
-                    return 3;
-                case "thoughtful":
-                    return 4;
-                case "thinking":
-                    return 5;
-                case "considering":
-                    return 6;
-                case "pondering":
-                    return 7;
-                case "ruminating":
-                    return 8;
-                case "concentrating":
-                    return 9;
-                case "attentive":
-                    return 10;
-                case "deliberative":
-                    return 11;
-                case "interested":
-                    return 12;
-                case "examining":
-                    return 13;
-                case "understanding":
-                    return 14;
-                case "absorbing":
-                    return 15;
-                case "intrigued":
-                    return 16;
-                case "scrutinizing":
-                    return 17;
-                case "analyzing":
-                    return 18;
-                case "studious":
-                    return 19;
-                case "focused":
-                    return 20;
-                case "very focused":
-                    return 21;
-                case "engaged":
-                    return 22;
-                case "very engaged":
-                    return 23;
-                case "cogitating":
-                    return 24;
-                case "fascinated":
-                    return 25;
-                case "captivated":
-                    return 26;
-                case "engrossed":
-                    return 27;
-                case "riveted":
-                    return 28;
-                case "very riveted":
-                    return 29;
-                case "rapt":
-                    return 30;
-                case "very rapt":
-                    return 31;
-                case "enthralled":
-                    return 32;
-                case "nearly locked":
-                    return 33;
-                case "mind lock":
-                    return 34;
-                default:
-                    return 0;
-            }
-
-        }
 
         private void ParseExperience(string line)
         {
@@ -676,10 +794,29 @@ namespace Standalone_Circle_Calc
             double dRank = Double.Parse(rank);
 
             if (_calculating)
-                _calcSkillList.Add(name, Convert.ToInt32(Math.Floor(dRank)));
+            {
+                _calcSkillList.Add(name, dRank);
+                DebugOutput("Added skill " + name + " at rank " + dRank.ToString());
+            }
             if (_sorting)
+            {
                 _sortSkillList.Add(name, dRank);
+                DebugOutput("Added skill " + name + " at rank " + dRank.ToString());
+            }
         }
+
+        private void DebugOutput(string output)
+        {
+            if (!_debug) return;
+            output = "DBG: "+output;
+            if (_host.get_Variable("CircleCalc.Parse") != "0")
+                _host.SendText("#parse " + output);
+            if (_host.get_Variable("CircleCalc.Log") != "0")
+                _host.SendText("#log \"" + output + "\"");
+            if (_host.get_Variable("CircleCalc.Echo") != "0")
+                _host.SendText("#echo red \"" + output + "\"");
+        }
+
 
         private void SendOutput(string output)
         {
@@ -697,7 +834,7 @@ namespace Standalone_Circle_Calc
 
         private Hashtable _calcSkillList = new Hashtable();
         private Hashtable _sortSkillList = new Hashtable();
-        private ArrayList reqList;
+        private ArrayList reqList = new ArrayList();
         private ArrayList sortList;
         private int totalTDPs;
         private int totalRanks;
@@ -715,13 +852,11 @@ namespace Standalone_Circle_Calc
             public CircleReq(int c, int cc, int rn, string n, int r)
             {
                 circle = c;
+                currentCircle = cc;
                 ranksNeeded = rn;
                 name = n;
                 ranks = r;
-                currentCircle = cc;
             }
-
-
         }
         private class SkillRanks
         {
@@ -764,76 +899,15 @@ namespace Standalone_Circle_Calc
             }
         }
 
-        private Guilds GetGuild(string guild)
+        private bool GetGuild(string guild)
         {
-            switch (guild.ToLower())
+            string guildcheck = guild.Trim().ToLower();
+            if (_GuildNameList.ContainsKey(guildcheck))
             {
-
-                case "barbarian":
-                case "barbaria":
-                case "barbari":
-                case "barbar":
-                case "barba":
-                case "barb":
-                    return Guilds.Barbarian;
-                case "bard":
-                    return Guilds.Bard;
-                case "moonmage":
-                case "moonmag":
-                case "moonm":
-                case "moon":
-                case "mm":
-                case "mmage":
-                    return Guilds.MoonMage;
-                case "thief":
-                case "thie":
-                    return Guilds.Thief;
-                case "empath":
-                case "empat":
-                case "empa":
-                case "path":
-                    return Guilds.Empath;
-                case "trader":
-                case "trade":
-                case "trad":
-                    return Guilds.Trader;
-                case "paladin":
-                case "paladi":
-                case "palad":
-                case "pala":
-                    return Guilds.Paladin;
-                case "ranger":
-                case "range":
-                case "rang":
-                    return Guilds.Ranger;
-                case "cleric":
-                case "cleri":
-                case "cler":
-                    return Guilds.Cleric;
-                case "necromancer":
-                case "necromance":
-                case "necroman":
-                case "necroma":
-                case "necrom":
-                case "necro":
-                case "necr":
-                    return Guilds.Necromancer;
-                case "commoner":
-                case "commone":
-                case "common":
-                case "commo":
-                case "comm":
-                    return Guilds.Commoner;
-                case "warriormage":
-                case "warriormag":
-                case "warriorm":
-                case "wmage":
-                case "wm":
-                    return Guilds.WarriorMage;
-                default:
-                    return Guilds.None;
+                _calcGuild = (GuildType)_GuildReqList[(string)_GuildNameList[guildcheck]];
+                return true;
             }
-
+            return false;
         }
 
         private SkillSets GetSkillSet(string skillset)
@@ -915,56 +989,51 @@ namespace Standalone_Circle_Calc
                 int seed = 0;
                 System.Random randomizer;
                 seed = (int)(DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalSeconds;
-//                seed = Convert.ToInt32(_host.get_Variable("gametime"));
                 randomizer = new System.Random(seed);
                 int rand = randomizer.Next();
-                switch (_calcGuild)
+                switch (_calcGuildName)
                 {
-                    case Guilds.None:
-                        SendOutput("Join a guild you loser.");
-                        break;
-                    case Guilds.Barbarian:
+                    case "Barbarian":
 
                         break;
-                    case Guilds.Bard:
+                    case "Bard":
                         if (rand % 2 == 0)
                             SendOutput("P.S. Bards suck(even with your poorly designed screams). Reroll.");
                         else
-                            SendOutput("Shouldn't you be down at the pub?");
+                            SendOutput("Lush.");
                         break;
-                    case Guilds.Cleric:
+                    case "Cleric":
                         SendOutput("Rezz Plz?");
                         break;
-                    case Guilds.Commoner:
+                    case "Commoner":
                         SendOutput("Join a guild you loser.");
                         break;
-                    case Guilds.Empath:
+                    case "Empath":
                         break;
-                    case Guilds.MoonMage:
+                    case "Moon Mage":
                         break;
-                    case Guilds.Necromancer:
+                    case "Necromancer":
                         if (rand % 2 == 0)
                             SendOutput("Don't you think it's time to give up the evil tea parties");
                         else
                             SendOutput("Sacrified enough puppies today?");
                         break;
-                    case Guilds.Paladin:
+                    case "Paladin":
                         break;
-                    case Guilds.Ranger:
+                    case "Ranger":
                         break;
-                    case Guilds.Thief:
+                    case "Thief":
                         break;
-                    case Guilds.Trader:
+                    case "Trader":
                         break;
-                    case Guilds.WarriorMage:
+                    case "Warrior Mage":
                         SendOutput("WM Strategy:  10 prep TC, 20 cast area, 30 prep CL, 40 cast area, 50 goto 10");
                         break;
                     default:
-                        SendOutput("Do you break everything you touch?");
                         break;
                 }
             }
-            _calcGuild = Guilds.None;
+            _calcGuildName = "";
             _calculating = false;
         }
 
@@ -989,10 +1058,16 @@ namespace Standalone_Circle_Calc
                 TDPText = TDPText + _skillset.ToString() + " skillsets";
                 TotalRanksText = TotalRanksText + _skillset.ToString() + " skillsets";
             }
-            else
+            else if (_skillset != SkillSets.none)
             {
                 TDPText = TDPText + "the " + _skillset.ToString() + " skillset";
                 TotalRanksText = TotalRanksText + "the " + _skillset.ToString() + " skillset";
+            }
+            else
+            {
+                TDPText = TDPText + _CurrentSortGroup.Name;
+                TotalRanksText = TotalRanksText + _CurrentSortGroup.Name;
+
             }
             TDPText = TDPText + ": " + String.Format("{0,6}", totalTDPs.ToString());
             TotalRanksText = TotalRanksText + ":   " + String.Format("{0,6}", totalRanks.ToString());
@@ -1011,165 +1086,149 @@ namespace Standalone_Circle_Calc
             MaxRankLen = 0;
             MaxDigitLen = 0;
             int ranks;
-            foreach (DictionaryEntry skill in _sortSkillList)
-            {
-                ranks = Convert.ToInt32(Math.Floor(Convert.ToDouble(skill.Value)));
-                totalTDPs += ranks * (ranks + 1) / 2;
-                totalRanks += ranks;
-            }
-            totalTDPs = Convert.ToInt32(totalTDPs / 200);
+//            foreach (DictionaryEntry skill in _sortSkillList)
+//            {
+//                ranks = Convert.ToInt32(Math.Floor(Convert.ToDouble(skill.Value)));
+//                totalTDPs += ranks * (ranks + 1) / 2;
+//                totalRanks += ranks;
+//            }
+//            totalTDPs = Convert.ToInt32(totalTDPs / 200);
             string skname = "";
             double skrank = 0;
             while (_sortSkillList.Count != 0)
             {
                 skname = HighestSkill(_sortSkillList);
                 skrank = Convert.ToDouble(_sortSkillList[skname]);
-                sortList.Add(new SkillRanks(skrank, skname));
-                if (skname.Length > MaxRankLen)
-                    MaxRankLen = skname.Length;
-                if (skrank.ToString().Length > MaxDigitLen)
-                    MaxDigitLen = skrank.ToString().Length;
+                if (_skillset != SkillSets.none || _CurrentSortGroup.Skills.Contains(skname))
+                {
+                    sortList.Add(new SkillRanks(skrank, skname));
+                    ranks = Convert.ToInt32(Math.Floor(skrank));
+                    totalTDPs += ranks * (ranks + 1) / 2;
+                    totalRanks += ranks;
+
+                    if (skname.Length > MaxRankLen)
+                        MaxRankLen = skname.Length;
+                    if (skrank.ToString().Length > MaxDigitLen)
+                        MaxDigitLen = skrank.ToString().Length;
+                }
                 _sortSkillList.Remove(skname);
             }
+            
+            totalTDPs = Convert.ToInt32(totalTDPs / 200);
 
             RankComparer rankComparer = new RankComparer();
             sortList.Sort(rankComparer);
-
+  
             ShowRanks();
             _sortSkillList.Clear();
         }
 
-        private void CalculateCircle()
+        private void CalculateCirclebyXML()
         {
-            totalTDPs = 0;
+
+            reqList = new ArrayList();
+
+            int circle = 0;
+            double ranksNeeded = 0.0;
+            string skill = "";
+            int currentCircle = 0;
+
             totalRanks = 0;
-            foreach (DictionaryEntry skill in _calcSkillList)
-            {
-                int ranks = Convert.ToInt32(skill.Value);
-                totalTDPs += ranks * (ranks + 1) / 2;
-                totalRanks += ranks;
-            }
+            totalTDPs = 0;
+            int ranks;
+            ICollection Keys = _calcSkillList.Keys;
 
-            totalTDPs = Convert.ToInt32(totalTDPs / 200);
- 
-            if (_calcSkillList.Contains("Stealth"))
+            try
             {
-                switch (_calcGuild)
+                foreach (string key in Keys)
                 {
-                    case Guilds.Barbarian:
-                        CalculateBarbarian3_0();
-                        break;
-                    case Guilds.Bard:
-                        CalculateBard3_0();
-                        break;
-                    case Guilds.Cleric:
-                        CalculateCleric3_0();
-                        break;
-                    case Guilds.Empath:
-                        CalculateEmpath3_0();
-                        break;
-                    case Guilds.MoonMage:
-                        CalculateMoonMage3_0();
-                        break;
-                    case Guilds.Necromancer:
-                        CalculateNecromancer3_0();
-                        break;
-                    case Guilds.Paladin:
-                        CalculatePaladin3_0();
-                        break;
-                    case Guilds.Ranger:
-                        CalculateRanger3_0();
-                        break;
-                    case Guilds.Thief:
-                        CalculateThief3_0();
-                        break;
-                    case Guilds.Trader:
-                        CalculateTrader3_0();
-                        break;
-                    case Guilds.WarriorMage:
-                        CalculateWarriorMage3_0();
-                        break;
-                    case Guilds.Commoner:
-                    default:
-                        SendOutput("");
-                        SendOutput("/calc: Try joining a guild first.");
-                        return;
+                    DebugOutput("Checking Key " + key);
+                    ranks = Convert.ToInt32(Math.Floor(Convert.ToDouble(_calcSkillList[key])));
+                    DebugOutput("Ranks for key " + key + " are " + ranks);
+                    totalTDPs += ranks * (ranks + 1) / 2;
+                    totalRanks += ranks;
+
+                    if (_calcGuild.HardReqs.ContainsKey(key))
+                    {
+                        DebugOutput("Key is a hard req");
+                        CalculateReq3_0(ref circle, ref currentCircle, ((ReqType)_calcGuild.HardReqs[key]).Circles1to10, ((ReqType)_calcGuild.HardReqs[key]).Circles11to30, ((ReqType)_calcGuild.HardReqs[key]).Circles31to70, ((ReqType)_calcGuild.HardReqs[key]).Circles71to100, ((ReqType)_calcGuild.HardReqs[key]).Circles101to150, ((ReqType)_calcGuild.HardReqs[key]).Circles151Up, (int)(double)_calcSkillList[key], ref ranksNeeded);
+                        reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), key, Convert.ToInt32(Math.Floor(Convert.ToDouble(_calcSkillList[key])))));
+                        continue;
+                    }
+                    if (_calcGuild.SoftReqs.ContainsKey(key))
+                    {
+                        DebugOutput("Key is a soft req");
+                        CalculateReq3_0(ref circle, ref currentCircle, ((ReqType)_calcGuild.SoftReqs[key]).Circles1to10, ((ReqType)_calcGuild.SoftReqs[key]).Circles11to30, ((ReqType)_calcGuild.SoftReqs[key]).Circles31to70, ((ReqType)_calcGuild.SoftReqs[key]).Circles71to100, ((ReqType)_calcGuild.SoftReqs[key]).Circles101to150, ((ReqType)_calcGuild.SoftReqs[key]).Circles151Up, (int)(double)_calcSkillList[key], ref ranksNeeded);
+                        reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), key, (int)(double)_calcSkillList[key]));
+                    }
+                    //check if skill belongs in a skillset, if so add it in.
+                    if (_calcGuild.Skillsets.ContainsKey(key))
+                    {
+                        string tempskillset = (string)_calcGuild.Skillsets[key];
+                        DebugOutput("Key is a skilllset - " + tempskillset);
+                        if (!_calcSkillsets.ContainsKey(tempskillset))
+                        {
+                            DebugOutput("inserting first key into " + tempskillset + " skillset");
+                            Hashtable temphash = new Hashtable();
+                            temphash.Add(key, (double)_calcSkillList[key]);
+                            _calcSkillsets.Add(tempskillset, temphash);
+                        }
+                        else
+                        {
+                            ((Hashtable)_calcSkillsets[tempskillset]).Add(key, (double)_calcSkillList[key]);
+                            DebugOutput("inserting non-first key into " + tempskillset + " skillset");
+
+                        }
+                    }
+
                 }
-            }
-            else
-            {
-                switch (_calcGuild)
+                totalTDPs = Convert.ToInt32(totalTDPs / 200);
+                DebugOutput("Finished checking all skills, now calculating against n reqs");
+                foreach (ReqType Req in _calcGuild.TopN)
                 {
-                    case Guilds.Barbarian:
-                        CalculateBarbarian();
-                        break;
-                    case Guilds.Bard:
-                        CalculateBard();
-                        break;
-                    case Guilds.MoonMage:
-                        CalculateMoonMage();
-                        break;
-                    case Guilds.Thief:
-                        CalculateThief();
-                        break;
-                    case Guilds.Empath:
-                        CalculateEmpath();
-                        break;
-                    case Guilds.Trader:
-                        CalculateTrader();
-                        break;
-                    case Guilds.Paladin:
-                        CalculatePaladin();
-                        break;
-                    case Guilds.Ranger:
-                        CalculateRanger();
-                        break;
-                    case Guilds.Cleric:
-                        CalculateCleric();
-                        break;
-                    case Guilds.WarriorMage:
-                        CalculateWarriorMage();
-                        break;
-                    case Guilds.Necromancer:
-                        CalculateNecromancer();
-                        break;
-                    case Guilds.Commoner:
-                    default:
-                        SendOutput("");
-                        SendOutput("/calc: Try joining a guild first.");
-                        return;
+                    DebugOutput("Checking N Req for " + Req.Name);
+                    skill = HighestSkill(((Hashtable)_calcSkillsets[Req.Skillset]));
+                    DebugOutput("Highest Skill is " + skill);
+                    CalculateReq3_0(ref circle, ref currentCircle, Req.Circles1to10, Req.Circles11to30, Req.Circles31to70, Req.Circles71to100, Req.Circles101to150, Req.Circles151Up, (int)(double)(((Hashtable)_calcSkillsets[Req.Skillset])[skill]), ref ranksNeeded);
+                    reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), Req.Name + " (" + skill + ")", (int)(double)(((Hashtable)_calcSkillsets[Req.Skillset])[skill])));
+                    ((Hashtable)_calcSkillsets[Req.Skillset]).Remove(skill);
                 }
+
+                IComparer reqCompareSort;
+                if (_host.get_Variable("CircleCalc.Sort") == "1")
+                {
+                    reqCompareSort = new ReqComparerBottom();
+                    reqList.Sort(reqCompareSort);
+
+                    while (((CircleReq)reqList[reqList.Count - 1]).circle == 500)
+                        reqList.RemoveAt(reqList.Count - 1);
+                }
+                else
+                {
+                    reqCompareSort = new ReqComparer();
+                    reqList.Sort(reqCompareSort);
+
+                    while (((CircleReq)reqList[0]).circle == 500)
+                        reqList.RemoveAt(0);
+                }
+                ShowReqs();
             }
-            IComparer reqCompareSort;
-            if (_host.get_Variable("CircleCalc.Sort") == "1")
+            catch (Exception ex)
             {
-                reqCompareSort = new ReqComparerBottom();
-                reqList.Sort(reqCompareSort);
-
-                while (((CircleReq)reqList[reqList.Count - 1]).circle == 500)
-                    reqList.RemoveAt(reqList.Count - 1);
+                SendOutput(ex.ToString());
             }
-            else
+            finally
             {
-                reqCompareSort = new ReqComparer();
-                reqList.Sort(reqCompareSort);
-
-                while (((CircleReq)reqList[0]).circle == 500)
-                    reqList.RemoveAt(0);
+                reqList.Clear();
+                _calcSkillList.Clear();
+                _calcSkillsets.Clear();
             }
-
-            //ReqComparer reqComparer = new ReqComparer();
-            
-
-            ShowReqs();
-            _calcSkillList.Clear();
-
         }
 
         private string HighestSkill(Hashtable skills)
         {
             string skillName = "";
-            double ranks = 0.0;
+            double ranks = -1.0;
             foreach (DictionaryEntry skill in skills)
             {
                 if (Convert.ToDouble(skill.Value) > ranks)
@@ -1182,563 +1241,8 @@ namespace Standalone_Circle_Calc
         }
 
         #region DR3.0Functions
-        
-        private string HighestArmor3_0(Hashtable skills)
-        {
-            string skillName = "";
-            int ranks = 0;
 
-            switch (_calcGuild)
-            {
-                case Guilds.Cleric:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Brigandine":
-                            case "Chain Armor":
-                            case "Light Armor":
-                            case "Plate Armor":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-                        }
-                    }
-                    break;
-
-                //case Guilds.Barbarian:
-                //case Guilds.Bard:
-                //case Guilds.Empath:
-                //case Guilds.MoonMage:
-                //case Guilds.Necromancer:
-                //case Guilds.Paladin:
-                //case Guilds.Ranger:
-                //case Guilds.Thief:
-                //case Guilds.Trader:
-                //case Guilds.WarriorMage:
-                default:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Brigandine":
-                            case "Chain Armor":
-                            case "Light Armor":
-                            case "Plate Armor":
-                            case "Shield Usage":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-                        }
-                    }
-                    break;
-            }
-
-            return skillName;
-        }
-
-        private string HighestWeapon3_0(Hashtable skills)
-        {
-            string skillName = "";
-            int ranks = 0;
-
-            switch (_calcGuild)
-            {
-                case Guilds.Necromancer:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Bow":
-                            case "Brawling":
-                            case "Crossbow":
-                            case "Heavy Thrown":
-                            case "Large Blunt":
-                            case "Large Edged":
-                            case "Light Thrown":
-                            case "Polearms":
-                            case "Slings":
-                            case "Small Blunt":
-                            case "Staves":
-                            case "Twohanded Blunt":
-                            case "Twohanded Edged":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-                        }
-                    }
-                    break;
-                
-                //case Guilds.Barbarian:
-                //case Guilds.Bard:
-                //case Guilds.Cleric:
-                //case Guilds.Empath:
-                //case Guilds.MoonMage:
-                //case Guilds.Paladin:
-                //case Guilds.Ranger:
-                //case Guilds.Thief:
-                //case Guilds.Trader:
-                //case Guilds.WarriorMage:
-                default:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Bow":
-                            case "Brawling":
-                            case "Crossbow":
-                            case "Heavy Thrown":
-                            case "Large Blunt":
-                            case "Large Edged":
-                            case "Light Thrown":
-                            case "Polearms":
-                            case "Slings":
-                            case "Small Blunt":
-                            case "Small Edged":
-                            case "Staves":
-                            case "Twohanded Blunt":
-                            case "Twohanded Edged":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-                        }
-                    }
-                    break;
-            }
-
-            return skillName;
-        }
-
-        private string HighestMagic3_0(Hashtable skills)
-        {
-            string skillName = "";
-            int ranks = 0;
-
-            switch (_calcGuild)
-            {
-                case Guilds.Barbarian:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Augmentation":
-                            case "Debilitation":
-                            case "Warding":
-                            case "Arcana":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-                        }
-                    }
-                    break;
-
-                case Guilds.Bard:
-                case Guilds.MoonMage:
-                case Guilds.Necromancer:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Attunement":
-                            case "Arcana":
-                            case "Targeted Magic":
-                            case "Augmentation":
-                            case "Debilitation":
-                            case "Utility":
-                            case "Warding":
-                            case "Sorcery":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-                        }
-                    }
-                    break;
-                
-                //case Guilds.Cleric:
-                //case Guilds.Empath:
-                //case Guilds.Paladin:
-                //case Guilds.Ranger:
-                //case Guilds.Thief:
-                //case Guilds.Trader:
-                //case Guilds.WarriorMage:
-                default:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Attunement":
-                            case "Arcana":
-                            case "Targeted Magic":
-                            case "Augmentation":
-                            case "Debilitation":
-                            case "Utility":
-                            case "Warding":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-                        }
-                    }
-                    break;                
-            }
-
-            return skillName;
-
-        }
-
-        private string HighestSurvival3_0(Hashtable skills)
-        {
-            string skillName = "";
-            int ranks = 0;
-
-            switch (_calcGuild)
-            {
-                case Guilds.Barbarian:
-                case Guilds.Paladin:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Athletics":
-                            case "First Aid":
-                            case "Locksmithing":
-                            case "Outdoorsmanship":
-                            case "Perception":
-                            case "Skinning":
-                            case "Stealth":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-                        }
-                    }
-                    break;
-                
-                case Guilds.Bard:
-                case Guilds.Necromancer:
-                case Guilds.Trader:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Athletics":
-                            case "Evasion":
-                            case "First Aid":
-                            case "Locksmithing":
-                            case "Outdoorsmanship":
-                            case "Perception":
-                            case "Skinning":
-                            case "Stealth":
-                            case "Thievery":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-                        }
-                    }
-                    break;
-
-                case Guilds.Empath:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Athletics":
-                            case "Evasion":
-                            case "Locksmithing":
-                            case "Outdoorsmanship":
-                            case "Perception":
-                            case "Skinning":
-                            case "Stealth":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-                        }
-                    }
-                    break;
-
-                case Guilds.Ranger:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Athletics":
-                            case "Evasion":
-                            case "First Aid":
-                            case "Locksmithing":
-                            case "Outdoorsmanship":
-                            case "Perception":
-                            case "Scouting":
-                            case "Skinning":
-                            case "Stealth":
-                            case "Thievery":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-                        }
-                    }
-                    break;
-
-                case Guilds.Thief:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Athletics":
-                            case "Backstab":
-                            case "Evasion":
-                            case "First Aid":
-                            case "Locksmithing":
-                            case "Outdoorsmanship":
-                            case "Perception":
-                            case "Skinning":
-                            case "Stealth":
-                            case "Thievery":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-                        }
-                    }
-                    break;
-
-                //case Guilds.Cleric:
-                //case Guilds.MoonMage:
-                //case Guilds.WarriorMage:
-                default:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Athletics":
-                            case "Evasion":
-                            case "First Aid":
-                            case "Locksmithing":
-                            case "Outdoorsmanship":
-                            case "Perception":
-                            case "Skinning":
-                            case "Stealth":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-                        }
-                    }
-                    break;
-            }
-
-            return skillName;
-        }
-
-        private string HighestLore3_0(Hashtable skills)
-        {
-            string skillName = "";
-            int ranks = 0;
-            switch (_calcGuild)
-            {
-                case Guilds.Barbarian:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Alchemy":
-                            case "Appraisal":
-                            case "Enchanting":
-                            case "Engineering":
-                            case "Forging":
-                            case "Mechanical Lore":
-                            case "Outfitting":
-                            case "Performance":
-                            case "Scholarship":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-                        }
-                    }
-                    break;
-
-                case Guilds.Bard:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Alchemy":
-                            case "Appraisal":
-                            case "Enchanting":
-                            case "Engineering":
-                            case "Forging":
-                            case "Mechanical Lore":
-                            case "Outfitting":
-                            case "Scholarship":
-                            case "Tactics":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-                        }
-                    }
-                    break;
-
-                case Guilds.Empath:
-                case Guilds.MoonMage:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Alchemy":
-                            case "Appraisal":
-                            case "Enchanting":
-                            case "Engineering":
-                            case "Forging":
-                            case "Mechanical Lore":
-                            case "Outfitting":
-                            case "Performance":
-                            case "Tactics":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-                        }
-                    }
-                    break;
-
-                case Guilds.Trader:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Alchemy":
-                            case "Enchanting":
-                            case "Engineering":
-                            case "Forging":
-                            case "Mechanical Lore":
-                            case "Outfitting":
-                            case "Performance":
-                            case "Scholarship":
-                            case "Tactics":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-                        }
-                    }
-                    break;
-                    
-                //case Guilds.Cleric:
-                //case Guilds.Necromancer:
-                //case Guilds.Paladin:
-                //case Guilds.Ranger:
-                //case Guilds.Thief:
-                //case Guilds.WarriorMage:
-                default:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Alchemy":
-                            case "Appraisal":
-                            case "Enchanting":
-                            case "Engineering":
-                            case "Forging":
-                            case "Mechanical Lore":
-                            case "Outfitting":
-                            case "Performance":
-                            case "Scholarship":
-                            case "Tactics":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-                        }
-                    }
-                    break;
-            }
-
-            return skillName;
-        }
-
-        private void CalculateReq3_0(ref int circle, ref int currentCircle, double rank1, double rank2, double rank3, double rank4, double rank5, double rank6, double ranks, ref double ranksNeeded)
+        private void CalculateReq3_0(ref int circle, ref int currentCircle, double rank1, double rank2, double rank3, double rank4, double rank5, double rank6, int ranks, ref double ranksNeeded)
         {
             //rank1: 001-010
             //rank2: 011-030
@@ -1880,8 +1384,8 @@ namespace Standalone_Circle_Calc
 
             circle = 500;
         }
-
-        private void CalculateBarbarian3_0()
+        
+/*        private void CalculateBarbarian3_0()
         {
 
             reqList = new ArrayList();
@@ -2008,3324 +1512,350 @@ namespace Standalone_Circle_Calc
             reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
             _calcSkillList.Remove(skill);
         }
-
-        private void CalculateBard3_0()
-        {
-            reqList = new ArrayList();
-
-            int circle = 0;
-            double ranksNeeded = 0;
-            string skill = "";
-            int currentCircle = 0;
-
-            // Hard and Soft Skills:
-            //          Parry   Performance Tactics [Bardic Lore tbd]
-            //001-010:  2       4           2
-            //011-030:  3       4           3
-            //031-070:  3       5           3
-            //071-100:  4       5           4
-            //101-150:  5       6           5
-            //151 +  :  13      15          13
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 5, 13, Convert.ToInt32(_calcSkillList["Parry Ability"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Parry Ability", Convert.ToInt32(_calcSkillList["Parry Ability"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 4, 4, 5, 5, 6, 15, Convert.ToInt32(_calcSkillList["Performance"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Performance", Convert.ToInt32(_calcSkillList["Performance"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 5, 13, Convert.ToInt32(_calcSkillList["Tactics"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tactics", Convert.ToInt32(_calcSkillList["Tactics"])));
-            //CalculateReq3_0(ref circle, ref currentCircle, ?, ?, ?, ?, ?, ?, Convert.ToInt32(_calcSkillList["Bardic Lore"]), ref ranksNeeded);
-            //reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Bardic Lore", Convert.ToInt32(_calcSkillList["Bardic Lore"])));
-
-            //Armor Skills:
-            //          1st     
-            //001-010:  2
-            //011-030:  2
-            //031-070:  2
-            //071-100:  3
-            //101-150:  3
-            //151 +  :  8
-            skill = HighestArmor3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Armor(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-
-            //Weapon Skills:
-            //          1st     2nd
-            //001-010:  3       2
-            //011-030:  3       3
-            //031-070:  4       3
-            //071-100:  4       4
-            //101-150:  5       4
-            //151 +  :  13      10
-            skill = HighestWeapon3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 3, 4, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestWeapon3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Magic Skills:
-            //          1st     2nd     3rd     4th     5th
-            //001-010:  3       2       2       1       0
-            //011-030:  3       2       2       2       0
-            //031-070:  4       3       3       2       2
-            //071-100:  4       4       3       3       3
-            //101-150:  5       5       4       4       3
-            //151 +  :  13      13      10      10      8
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 3, 4, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 3, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 0, 0, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-
-            //Lore Skills:
-            //          1st     2nd     3rd
-            //001-010:  3       3       2
-            //011-030:  3       3       2
-            //031-070:  4       3       3
-            //071-100:  4       4       3
-            //101-150:  5       5       4
-            //151 +  :  13      13      10
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 3, 4, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 3, 3, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-        }
-
-        private void CalculateCleric3_0()
-        {
-            reqList = new ArrayList();
-
-            int circle = 0;
-            double ranksNeeded = 0;
-            string skill = "";
-            int currentCircle = 0;
-
-            //Hard and Soft Skills:
-            //          Shield  Parry   Augmentation    Theurgy
-            //001-010:  1       2       2               3
-            //011-030:  2       3       2               4
-            //031-070:  2       3       3               4
-            //071-100:  3       3       3               5
-            //101-150:  4       4       4               6
-            //151 +  :  10      10      10              15
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 3, 4, 10, Convert.ToInt32(_calcSkillList["Shield Usage"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Shield Usage", Convert.ToInt32(_calcSkillList["Shield Usage"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList["Parry Ability"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Parry Ability", Convert.ToInt32(_calcSkillList["Parry Ability"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList["Augmentation"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Augmentation", Convert.ToInt32(_calcSkillList["Augmentation"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 4, 4, 5, 6, 15, Convert.ToInt32(_calcSkillList["Theurgy"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Theurgy", Convert.ToInt32(_calcSkillList["Theurgy"])));
-
-            //Armor Skills:
-            //          1st
-            //001-010:  2
-            //011-030:  2
-            //031-070:  3
-            //071-100:  3
-            //101-150:  4
-            //151 +  :  10
-            skill = HighestArmor3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Armor(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Weapon Skills:
-            //          1st     2nd
-            //001-010:  3       0
-            //011-030:  3       0
-            //031-070:  4       2
-            //071-100:  4       2
-            //101-150:  5       3
-            //151 +  :  13      8
-            skill = HighestWeapon3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 3, 4, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestWeapon3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 0, 0, 2, 2, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Armor(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Magic Skills:
-            //          1st     2nd     3rd     4th     5th
-            //001-010:  4       4       3       0       0
-            //011-030:  4       4       3       3       0
-            //031-070:  5       4       4       3       3
-            //071-100:  5       5       4       4       4
-            //101-150:  6       6       5       5       5
-            //151 +  :  15      15      13      13      13
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 4, 4, 5, 5, 6, 15, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 4, 4, 4, 5, 6, 15, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 3, 4, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 0, 3, 3, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 0, 0, 3, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Survival Skills:
-            //          1st     2nd     3rd-4th
-            //001-010:  1       1       1
-            //011-030:  2       1       1
-            //031-070:  2       2       1
-            //071-100:  3       2       2
-            //101-150:  3       3       2
-            //151 +  :  8       8       5
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 2, 2, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 1, 2, 2, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 1, 2, 2, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Lore Skills:
-            //          1st     2nd     3rd     4th
-            //001-010:  2       2       1       0
-            //011-030:  3       2       2       0
-            //031-070:  3       3       2       2
-            //071-100:  4       3       3       3
-            //101-150:  5       4       3       3
-            //151 +  :  13      10      8       8
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 0, 0, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-        }
-
-        private void CalculateEmpath3_0()
-        {
-            reqList = new ArrayList();
-
-            int circle = 0;
-            double ranksNeeded = 0;
-            string skill = "";
-            int currentCircle = 0;
-
-            //Hard and Soft Skills:
-            //          FA      Outdoors    Empathy     Scholar 
-            //001-010:  2       1           4           3
-            //011-030:  3       1           5           3
-            //031-070:  3       2           6           4
-            //071-100:  3       2           6           5
-            //101-150:  4       2           7           5
-            //151 +  :  10      5           15          13
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList["First Aid"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "First Aid", Convert.ToInt32(_calcSkillList["First Aid"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 2, 2, 2, 5, Convert.ToInt32(_calcSkillList["Outdoorsmanship"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Outdoorsmanship", Convert.ToInt32(_calcSkillList["Outdoorsmanship"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 4, 5, 6, 6, 7, 15, Convert.ToInt32(_calcSkillList["Empathy"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Empathy", Convert.ToInt32(_calcSkillList["Empathy"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 3, 4, 5, 5, 13, Convert.ToInt32(_calcSkillList["Scholarship"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Scholarship", Convert.ToInt32(_calcSkillList["Scholarship"])));
-
-            //Magic Skills:
-            //          1st     2nd     3rd     4th     5th
-            //001-010:  3       2       2       0       0
-            //011-030:  3       3       3       2       0
-            //031-070:  4       3       3       3       3
-            //071-100:  4       4       4       3       3
-            //101-150:  5       5       4       4       4
-            //151 +  :  13      13      10      10      10
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 3, 4, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 0, 2, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 0, 0, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Survival Skills:
-            //          1st-2nd     3rd     4th-5th
-            //001-010:  1           1       1
-            //011-030:  2           1       1
-            //031-070:  2           2       1
-            //071-100:  3           3       2
-            //101-150:  4           3       2
-            //151 +  :  10          8       5
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 1, 2, 2, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 1, 2, 2, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Lore Skills:
-            //          1st     2nd     3rd
-            //001-010:  3       2       2
-            //011-030:  3       3       2
-            //031-070:  4       3       3
-            //071-100:  4       4       3
-            //101-150:  5       4       4
-            //151 +  :  13      10      10
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 3, 4, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-        }
-
-        private void CalculateMoonMage3_0()
-        {
-            reqList = new ArrayList();
-
-            int circle = 0;
-            double ranksNeeded = 0;
-            string skill = "";
-            int currentCircle = 0;
-
-            //Hard and Soft Skills:
-            //          Astro   Scholarship
-            //001-010:  3       3
-            //011-030:  4       3
-            //031-070:  4       3
-            //071-100:  5       4
-            //101-150:  6       4
-            //151 +  :  15      10
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 4, 4, 5, 6, 15, Convert.ToInt32(_calcSkillList["Astrology"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Astrology", Convert.ToInt32(_calcSkillList["Astrology"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 3, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList["Scholarship"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Scholarship", Convert.ToInt32(_calcSkillList["Scholarship"])));
-
-            //Magic Skills:
-            //          1st     2nd     3rd     4th     5th-6th     7th
-            //001-010:  4       4       3       2       0           0
-            //011-030:  4       4       4       3       3           0
-            //031-070:  5       4       4       4       3           3
-            //071-100:  6       5       5       5       4           3
-            //101-150:  7       6       5       5       5           4
-            //151 +  :  18      15      13      13      13          10
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 4, 4, 5, 6, 7, 18, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 4, 4, 4, 5, 6, 15, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 4, 4, 5, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 4, 5, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 0, 3, 3, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 0, 3, 3, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "6th Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 0, 0, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "7th Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Survival Skills:
-            //          1st     2nd     3rd     4th     5th
-            //001-010:  2       2       2       2       0
-            //011-030:  3       3       2       2       2
-            //031-070:  3       3       3       2       2
-            //071-100:  4       4       3       3       3
-            //101-150:  5       4       4       3       3
-            //151 +  :  13      10      10      8       8
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 0, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Lore Skills:
-            //          1st     2nd     3rd
-            //001-010:  2       2       1
-            //011-030:  3       2       2
-            //031-070:  3       3       2
-            //071-100:  4       3       3
-            //101-150:  5       4       3
-            //151 +  :  13      10      8
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-        }
-
-        private void CalculateNecromancer3_0()
-        {
-            reqList = new ArrayList();
-
-            int circle = 0;
-            double ranksNeeded = 0;
-            string skill = "";
-            int currentCircle = 0;
-
-            //Hard and Soft Skills:
-            //          Small Edged     TM      Than
-            //001-010:  1               2       3
-            //011-030:  2               2       4
-            //031-070:  2               3       4
-            //071-100:  2               4       5
-            //101-150:  2               5       6
-            //151 +  :  5               13      15
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 2, 2, 5, Convert.ToInt32(_calcSkillList["Small Edged"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Small Edged", Convert.ToInt32(_calcSkillList["Small Edged"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 3, 4, 5, 13, Convert.ToInt32(_calcSkillList["Targeted Magic"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Targeted Magic", Convert.ToInt32(_calcSkillList["Targeted Magic"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 4, 4, 5, 6, 15, Convert.ToInt32(_calcSkillList["Thanatology"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Thanatology", Convert.ToInt32(_calcSkillList["Thanatology"])));
-
-            //Armor Skills:
-            //          1st
-            //001-010:  1
-            //011-030:  2
-            //031-070:  2
-            //071-100:  2
-            //101-150:  3
-            //151 +  :  8
-            skill = HighestArmor3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 2, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Armor(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Magic Skills:
-            //          1st     2nd     3rd-4th     5th
-            //001-010:  3       3       2           0
-            //011-030:  4       3       3           0
-            //031-070:  4       4       3           3
-            //071-100:  5       5       4           4
-            //101-150:  6       6       5           5
-            //151 +  :  15      15      13          13
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 4, 4, 5, 6, 15, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 3, 4, 5, 6, 15, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 0, 0, 3, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Survival Skills:
-            //          1st-2nd     3rd-5th     6th     7th
-            //001-010:  4           3           3       2
-            //011-030:  4           4           3       3
-            //031-070:  5           4           4       3
-            //071-100:  5           5           4       4
-            //101-150:  6           5           5       4
-            //151 +  :  15          13          13      10
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 4, 4, 5, 5, 6, 15, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 4, 4, 5, 5, 6, 15, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 4, 4, 5, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 4, 4, 5, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 4, 4, 5, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 3, 4, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "6th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "7th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Lore Skills:
-            //          1st     2nd
-            //001-010:  2       2
-            //011-030:  2       2
-            //031-070:  3       2
-            //071-100:  3       3
-            //101-150:  3       3
-            //151 +  :  8       8
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 3, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-        }
-
-        private void CalculatePaladin3_0()
-        {
-            reqList = new ArrayList();
-
-            int circle = 0;
-            double ranksNeeded = 0;
-            string skill = "";
-            int currentCircle = 0;
-
-            //Hard and Soft Skills:
-            //          Defending   Shield  Parry   Evasion Scholarship Tactics
-            //001-010:  3           2       3       2       1           1
-            //011-030:  3           2       3       3       2           2
-            //031-070:  4           3       4       3       2           3
-            //071-100:  4           3       4       4       3           3
-            //101-150:  5           4       5       4       3           4
-            //151 +  :  13          10      13      10      8           10
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 3, 4, 4, 5, 13, Convert.ToInt32(_calcSkillList["Defending"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Defending", Convert.ToInt32(_calcSkillList["Defending"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList["Shield Usage"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Shield Usage", Convert.ToInt32(_calcSkillList["Shield Usage"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 3, 4, 4, 5, 13, Convert.ToInt32(_calcSkillList["Parry Ability"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Parry Ability", Convert.ToInt32(_calcSkillList["Parry Ability"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList["Evasion"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Evasion", Convert.ToInt32(_calcSkillList["Evasion"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList["Scholarship"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Scholarship", Convert.ToInt32(_calcSkillList["Scholarship"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList["Tactics"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tactics", Convert.ToInt32(_calcSkillList["Tactics"])));
-
-            //Armor Skills:
-            //          1st     2nd
-            //001-010:  4       2
-            //011-030:  5       3
-            //031-070:  5       3
-            //071-100:  5       4
-            //101-150:  6       5
-            //151 +  :  15      13
-            skill = HighestArmor3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 4, 5, 5, 5, 6, 15, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Armor(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestArmor3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Armor(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Weapon Skills:
-            //          1st     2nd
-            //001-010:  3       0
-            //011-030:  4       2
-            //031-070   4       3
-            //071-100:  5       4
-            //101-150:  5       4
-            //151 +  :  13      10
-            skill = HighestWeapon3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 4, 4, 5, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestWeapon3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 0, 2, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Magic Skills:
-            //          1st     2nd     3rd
-            //001-010:  1       1       1
-            //011-030:  2       1       1
-            //031-070:  2       2       1
-            //071-100:  3       2       2
-            //101-150:  3       3       2
-            //151 +  :  8       8       5
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 2, 2, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 1, 2, 2, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Survival Skills:
-            //          1st     2nd     3rd-4th
-            //001-010:  1       1       1
-            //011-030:  2       1       1
-            //031-070:  2       2       1
-            //071-100:  3       2       2
-            //101-150:  3       3       2
-            //151 +  :  8       8       5
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 2, 2, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 1, 2, 2, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 1, 2, 2, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Lore Skills:
-            //          1st     2nd     3rd
-            //001-010:  2       1       1
-            //011-030:  3       2       1
-            //031-070:  3       3       2
-            //071-100:  4       3       2
-            //101-150:  4       4       3
-            //151 +  :  10      10      8
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 2, 2, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-        }
-
-        private void CalculateRanger3_0()
-        {
-            reqList = new ArrayList();
-
-            int circle = 0;
-            double ranksNeeded = 0;
-            string skill = "";
-            int currentCircle = 0;
-
-            //Hard and Soft Skills:
-            //          Defending   Parry   Scouting
-            //001-010:  1           2       2
-            //011-030:  2           2       3
-            //031-070:  2           2       3
-            //071-100:  3           3       4
-            //101-150:  4           3       4
-            //151 +  :  10          8       10
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 3, 4, 10, Convert.ToInt32(_calcSkillList["Defending"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Defending", Convert.ToInt32(_calcSkillList["Defending"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList["Parry Ability"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Parry Ability", Convert.ToInt32(_calcSkillList["Parry Ability"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList["Scouting"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Scouting", Convert.ToInt32(_calcSkillList["Scouting"])));
-
-            //Armor Skills:
-            //          1st     2nd
-            //001-010:  2       0
-            //011-030:  3       1
-            //031-070:  3       2
-            //071-100:  4       3
-            //101-150:  5       3
-            //151 +  :  13      8
-            skill = HighestArmor3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Armor(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestArmor3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 0, 1, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Armor(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Weapon Skills:
-            //          1st     2nd
-            //001-010:  3       1
-            //011-030:  3       2
-            //031-070:  4       3
-            //071-100:  4       3
-            //101-150:  5       4
-            //151 +  :  13      10
-            skill = HighestWeapon3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 3, 4, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestWeapon3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Magic Skills:
-            //          1st-2nd     3rd
-            //001-010:  1           1
-            //011-030:  2           1
-            //031-070:  2           2
-            //071-100:  3           2
-            //101-150:  3           3
-            //151 +  :  8           8
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 2, 2, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Survival Skills:
-            //          1st-2nd     3rd     4th-5th     6th-7th     8th
-            //001-010:  4           3       3           2           2
-            //011-030:  4           4       4           3           2
-            //031-070:  4           4       4           3           3
-            //071-100:  5           5       4           4           3
-            //101-150:  6           6       5           4           4
-            //151 +  :  15          15      13          10          10
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 4, 4, 4, 5, 6, 15, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 4, 4, 4, 5, 6, 15, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 4, 4, 5, 6, 15, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 4, 4, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 4, 4, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "6th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "7th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "8th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Lore Skills:
-            //          1st     2nd
-            //001-010:  1       0
-            //011-030:  1       1
-            //031-070:  2       1
-            //071-100:  2       2
-            //101-150:  3       2
-            //151 +  :  8       5
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 2, 2, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 0, 1, 1, 2, 2, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-        }
-
-        private void CalculateThief3_0()
-        {
-            reqList = new ArrayList();
-
-            int circle = 0;
-            double ranksNeeded = 0;
-            string skill = "";
-            int currentCircle = 0;
-
-            //Hard and Soft Skills:
-            //          Parry       Stealth     Thievery
-            //001-010:  1           2           2
-            //011-030:  2           2           3
-            //031-070:  2           3           3
-            //071-100:  3           3           4
-            //101-150:  3           4           4
-            //151 +  :  8           10          10
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList["Parry Ability"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Parry Ability", Convert.ToInt32(_calcSkillList["Parry Ability"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList["Stealth"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Stealth", Convert.ToInt32(_calcSkillList["Stealth"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList["Thievery"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Thievery", Convert.ToInt32(_calcSkillList["Thievery"])));
-
-            //Armor Skills:
-            //          1st
-            //001-010:  2
-            //011-030:  2
-            //031-070:  2
-            //071-100:  3
-            //101-150:  3
-            //151 +  :  8
-            skill = HighestArmor3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Armor(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Weapon Skills:
-            //          1st     2nd
-            //001-010:  3       1
-            //011-030:  3       2
-            //031-070:  4       3
-            //071-100:  4       3
-            //101-150:  5       4
-            //151 +  :  13      10
-            skill = HighestWeapon3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 3, 4, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestWeapon3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Survival Skills:
-            //          1st     2nd     3rd-4th     5th     6th     7th     8th
-            //001-010:  4       4       3           3       2       2       1
-            //011-030:  4       4       4           4       3       3       2
-            //031-070:  5       4       4           4       4       3       2
-            //071-100:  5       5       5           4       4       4       3
-            //101-150:  6       6       6           5       5       5       3
-            //151 +  :  15      15      15          13      13      13      8
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 4, 4, 5, 5, 6, 15, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 4, 4, 4, 5, 6, 15, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 4, 4, 5, 6, 15, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 4, 4, 5, 6, 15, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 4, 4, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 4, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "6th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "7th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "8th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Lore Skills:
-            //          1st     2nd     3rd
-            //001-010:  1       1       1
-            //011-030:  2       2       1
-            //031-070:  3       2       2
-            //071-100:  3       3       2
-            //101-150:  4       3       3
-            //151 +  :  10      8       8
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 2, 2, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-        }
-
-        private void CalculateTrader3_0()
-        {
-            reqList = new ArrayList();
-
-            int circle = 0;
-            double ranksNeeded = 0;
-            string skill = "";
-            int currentCircle = 0;
-
-            //Hard and Soft Skills:
-            //          App     Trading
-            //001-010:  3       4
-            //011-030:  3       5
-            //031-070:  4       6
-            //071-100:  5       6
-            //101-150:  6       7
-            //151 +  :  15      15
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 3, 4, 5, 6, 15, Convert.ToInt32(_calcSkillList["Appraisal"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Appraisal", Convert.ToInt32(_calcSkillList["Appraisal"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 4, 5, 6, 6, 7, 15, Convert.ToInt32(_calcSkillList["Trading"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Trading", Convert.ToInt32(_calcSkillList["Trading"])));
-
-            //Armor Skills:
-            //          1st     2nd
-            //001-010:  2       1
-            //011-030:  3       2
-            //031-070:  3       2
-            //071-100:  3       3
-            //101-150:  4       3
-            //151 +  :  10      8
-            skill = HighestArmor3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Armor(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestArmor3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Armor(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Weapon Skills:
-            //          1st
-            //001-010:  1
-            //011-030:  2
-            //031-070:  2
-            //071-100:  3
-            //101-150:  3
-            //151 +  :  8
-            skill = HighestWeapon3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Survival Skills:
-            //          1st     2nd-3rd     4th     5th     6th
-            //001-010:  3       2           1       1       1
-            //011-030:  3       3           2       2       1
-            //031-070:  4       3           2       2       1
-            //071-100:  4       4           3       3       2
-            //101-150:  5       4           4       3       2
-            //151 +  :  13      10          10      8       5
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 3, 4, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 1, 2, 2, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "6th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Lore Skills:
-            //          1st     2nd     3rd
-            //001-010:  3       2       2
-            //011-030:  3       3       2
-            //031-070:  4       3       3
-            //071-100:  4       4       4
-            //101-150:  5       4       4
-            //151 +  :  13      10      10
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 3, 4, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-        }
-
-        private void CalculateWarriorMage3_0()
-        {
-            reqList = new ArrayList();
-
-            int circle = 0;
-            double ranksNeeded = 0;
-            string skill = "";
-            int currentCircle = 0;
-
-            //Hard and Soft Skills:
-            //          Defending   Parry   Summon  TM      Scholarship
-            //001-010:  1           2       3       4       1
-            //011-030:  1           3       4       4       1
-            //031-070:  2           3       5       4       2
-            //071-100:  2           4       5       5       2
-            //101-150:  3           4       5       6       3
-            //151 +  :  8           10      13      15      8
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 2, 2, 3, 8, Convert.ToInt32(_calcSkillList["Defending"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Defending", Convert.ToInt32(_calcSkillList["Defending"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 3, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList["Parry Ability"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Parry Ability", Convert.ToInt32(_calcSkillList["Parry Ability"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 4, 5, 5, 5, 13, Convert.ToInt32(_calcSkillList["Summoning"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Summoning", Convert.ToInt32(_calcSkillList["Summoning"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 4, 4, 4, 5, 6, 15, Convert.ToInt32(_calcSkillList["Targeted Magic"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Targeted Magic", Convert.ToInt32(_calcSkillList["Targeted Magic"])));
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 2, 2, 3, 8, Convert.ToInt32(_calcSkillList["Scholarship"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Scholarship", Convert.ToInt32(_calcSkillList["Scholarship"])));
-
-            //Armor Skills:
-            //          1st
-            //001-010:  2
-            //011-030:  2
-            //031-070:  3
-            //071-100:  3
-            //101-150:  4
-            //151 +  :  10
-            skill = HighestArmor3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Armor(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Weapon Skills:
-            //          1st     2nd     3rd
-            //001-010:  3       0       0
-            //011-030:  4       3       0
-            //031-070   4       3       2
-            //071-100:  5       4       3
-            //101-150:  5       4       4
-            //151 +  :  13      10      10
-            skill = HighestWeapon3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 4, 4, 5, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestWeapon3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 0, 3, 3, 4, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestWeapon3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 0, 0, 2, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Magic Skills:
-            //          1st     2nd     3rd     4th     5th
-            //001-010:  4       4       3       0       0
-            //011-030:  4       4       3       3       0
-            //031-070:  5       4       4       3       3
-            //071-100:  5       5       4       4       4
-            //101-150:  6       6       5       5       5
-            //151 +  :  15      15      13      13      13
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 4, 4, 5, 5, 6, 15, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 4, 4, 4, 5, 6, 15, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 3, 3, 4, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 0, 3, 3, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 0, 0, 3, 4, 5, 13, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Survival Skills:
-            //          1st-2nd     3rd-4th
-            //001-010:  1           1
-            //011-030:  1           1
-            //031-070:  2           1
-            //071-100:  2           2
-            //101-150:  3           2
-            //151 +  :  8           5
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 2, 2, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 2, 2, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 1, 2, 2, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 1, 1, 2, 2, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Lore Skills:
-            //          1st     2nd     3rd
-            //001-010:  2       2       1
-            //011-030:  2       2       2
-            //031-070:  3       2       2
-            //071-100:  3       3       3
-            //101-150:  4       3       3
-            //151 +  :  10      8       8
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 3, 3, 4, 10, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 2, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore3_0(_calcSkillList);
-            CalculateReq3_0(ref circle, ref currentCircle, 1, 2, 2, 3, 3, 8, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-        }
-
+*/
         #endregion
 
-        #region DR2.0Functions
-        private string HighestMagic(Hashtable skills)
+        private void LoadReqsfromXML()
         {
-            string skillName = "";
-            int ranks = 0;
-
-            foreach (DictionaryEntry skill in skills)
+            bool reloading = _reqsLoaded;
+            string Reqs = _pluginPath + @"CircleReqs.xml";
+            if (!File.Exists(Reqs))
             {
-                switch (skill.Key.ToString())
+                _host.EchoText("Can't open: " + Reqs);
+                if (!_reqsLoaded)
+                    _host.EchoText("Calculating will be disabled until a requirements file is succesfully loaded.");
+                else
+                    _host.EchoText("Reqs reload failed, continuing ot use old reqs.");
+                return;
+            }
+            XmlTextReader reader = null;
+            Hashtable temp_GuildNameList = new Hashtable(); //filled with guildnames, key is shortname
+            Hashtable temp_GuildReqList = new Hashtable();  //filled with guilds, key is string
+
+            try
+            {
+                ReqType tempReq = new ReqType();
+                GuildType tempGuild = new GuildType();
+                string tempguildname = "";
+                string tempskillsetname = "";
+                string tempreqtype = "";
+                reader = new XmlTextReader(Reqs);
+                while (reader.Read())
                 {
-                    case "Harness Ability":
-                    case "Arcana":
-                    case "Power Perceive":
-                    case "Targeted Magic":
-                    case "Primary Magic":
-                    case "Lunar Magic":
-                    case "Life Magic":
-                    case "Holy Magic":
-                    case "Elemental Magic":
-                    case "Inner Magic":
-                    case "Arcane Magic":
-                        if (Convert.ToInt32(skill.Value) > ranks)
-                        {
-                            skillName = skill.Key.ToString();
-                            ranks = Convert.ToInt32(skill.Value);
-                        }
-                        break;
-                    default:
-                        break;
+                    switch (reader.NodeType)
+                    {
+                        case XmlNodeType.Element:
+                            if (reader.Name == "Guild")
+                            {
+                                tempGuild = new GuildType();
+                                tempguildname = reader["name"];
+                                temp_GuildNameList.Add(tempguildname, tempguildname);
+                                break;
+                            }
+                            else if (reader.Name == "Shortname")
+                            {
+                                while (!(reader.NodeType == XmlNodeType.EndElement && reader.Name == "Shortname"))
+                                {
+                                    reader.Read();
+                                    if (reader.NodeType == XmlNodeType.Text)
+                                        temp_GuildNameList.Add(reader.Value.ToLower(), tempguildname);
+                                }
+                                break;
+                            }
+                            else if (reader.Name == "Skillset")
+                            {
+                                tempskillsetname = reader["name"];
+                                break;
+                            }
+                            else if (reader.Name == "Skill")
+                            {
+                                while (!(reader.NodeType == XmlNodeType.EndElement && reader.Name == "Skill"))
+                                {
+                                    reader.Read();
+                                    if (reader.NodeType == XmlNodeType.Text && tempskillsetname != "")
+                                        tempGuild.Skillsets.Add(reader.Value.ToString(), tempskillsetname);
+                                }
+                                break;
+                            }
+                            else if (reader.Name == "Req")
+                            {
+                                tempReq = new ReqType();
+                                tempreqtype = reader["type"];
+                                tempReq.Name = reader["name"];
+                                if (tempreqtype == "N")
+                                    tempReq.Skillset = reader["Skillset"];
+                                else
+                                    tempReq.Skillset = "";
+                                break;
+                            }
+                            else if (reader.Name == "Circles1-10")
+                            {
+                                while (!(reader.NodeType == XmlNodeType.EndElement && reader.Name == "Circles1-10"))
+                                {
+                                    reader.Read();
+                                    if (reader.NodeType == XmlNodeType.Text)
+                                        tempReq.Circles1to10 = Convert.ToInt32(reader.Value);
+                                }
+                                break;
+                            }
+                            else if (reader.Name == "Circles11-30")
+                            {
+                                while (!(reader.NodeType == XmlNodeType.EndElement && reader.Name == "Circles11-30"))
+                                {
+                                    reader.Read();
+                                    if (reader.NodeType == XmlNodeType.Text)
+                                        tempReq.Circles11to30 = Convert.ToInt32(reader.Value);
+                                }
+                                break;
+                            }
+                            else if (reader.Name == "Circles31-70")
+                            {
+                                while (!(reader.NodeType == XmlNodeType.EndElement && reader.Name == "Circles31-70"))
+                                {
+                                    reader.Read();
+                                    if (reader.NodeType == XmlNodeType.Text)
+                                        tempReq.Circles31to70 = Convert.ToInt32(reader.Value);
+                                }
+                                break;
+                            }
+                            else if (reader.Name == "Circles71-100")
+                            {
+                                while (!(reader.NodeType == XmlNodeType.EndElement && reader.Name == "Circles71-100"))
+                                {
+                                    reader.Read();
+                                    if (reader.NodeType == XmlNodeType.Text)
+                                        tempReq.Circles71to100 = Convert.ToInt32(reader.Value);
+                                }
+                                break;
+                            }
+                            else if (reader.Name == "Circles101-150")
+                            {
+                                while (!(reader.NodeType == XmlNodeType.EndElement && reader.Name == "Circles101-150"))
+                                {
+                                    reader.Read();
+                                    if (reader.NodeType == XmlNodeType.Text)
+                                        tempReq.Circles101to150 = Convert.ToInt32(reader.Value);
+                                }
+                                break;
+                            }
+                            else if (reader.Name == "Circles151Up")
+                            {
+                                while (!(reader.NodeType == XmlNodeType.EndElement && reader.Name == "Circles151Up"))
+                                {
+                                    reader.Read();
+                                    if (reader.NodeType == XmlNodeType.Text)
+                                        tempReq.Circles151Up = Convert.ToInt32(reader.Value);
+                                }
+                                break;
+                            }
+                            if (reader.Name == "Reqs")
+                            {
+                                _reqsAuthor = reader["author"];
+                                _reqsVer = reader["ver"];
+                                break;
+                            }
+                            _host.EchoText("Unhandled Element: " + reader.Name);
+                            if (!_reqsLoaded)
+                                _host.EchoText("Calculating will be disabled until a requirements file is succesfully loaded.");
+                            else
+                                _host.EchoText("Reqs reload failed, continuing ot use old reqs.");
+                            return;
+                        case XmlNodeType.EndElement:
+                            if (reader.Name == "Guild")
+                            {
+                                temp_GuildReqList.Add(tempguildname, tempGuild);
+                                break;
+                            }
+                            else if (reader.Name == "Skillset")
+                            {
+                                tempskillsetname = "";
+                                break;
+                            }
+                            else if (reader.Name == "Req")
+                            {
+                                if (tempreqtype == "Hard")
+                                    tempGuild.HardReqs.Add(tempReq.Name, tempReq);
+                                else if (tempreqtype == "Soft")
+                                    tempGuild.SoftReqs.Add(tempReq.Name, tempReq);
+                                else
+                                    tempGuild.TopN.Add(tempReq);
+                                break;
+                            }
+                            else if (reader.Name == "Reqs")
+                            {
+                                break;
+                            }
+                            _host.EchoText("Unhandled End Element: " + reader.Name);
+                            if (!_reqsLoaded)
+                                _host.EchoText("Calculating will be disabled until a requirements file is succesfully loaded.");
+                            else
+                                _host.EchoText("Reqs reload failed, continuing ot use old reqs.");
+                            return;
+                        case XmlNodeType.Whitespace:
+                        case XmlNodeType.XmlDeclaration:
+                        case XmlNodeType.Comment:
+                            break;
+                        default:
+                            _host.EchoText("UnhandledType: " + reader.NodeType.ToString());
+                            if (!_reqsLoaded)
+                                _host.EchoText("Calculating will be disabled until a requirements file is succesfully loaded.");
+                            else
+                                _host.EchoText("Reqs reload failed, continuing ot use old reqs.");
+                            return;
+                    }
+
+                }
+            }
+            catch (Exception ex)
+            {
+                if (reader != null)
+                    reader.Close();
+                _host.EchoText("Exception during requirements file load.");
+                _host.EchoText(ex.ToString());
+                if (!_reqsLoaded)
+                    _host.EchoText("Calculating will be disabled until a requirements file is succesfully loaded.");
+                else
+                    _host.EchoText("Reqs reload failed, continuing ot use old reqs.");
+                return;
+            }
+            if (reader != null)
+                reader.Close();
+            _GuildNameList = temp_GuildNameList;
+            _GuildReqList = temp_GuildReqList;
+            _reqsLoaded = true;
+            if (reloading)
+                _host.EchoText("Reqs reload succeded.");
+        }
+
+        private void LoadSortfromXML()
+        {
+            bool reloading = _sortLoaded;
+            string SortFile = _pluginPath + @"SortGroups.xml";
+            if (!File.Exists(SortFile))
+            {
+                _host.EchoText("Can't open: " + SortFile);
+                if (!_sortLoaded)
+                    _host.EchoText("Custom sorting will be disabled until a sorting file is succesfully loaded.");
+                else
+                    _host.EchoText("Sorting reload failed, continuing ot use old sorting file.");
+                return;
+            }
+            XmlTextReader reader = null;
+            Hashtable temp_GroupNameList = new Hashtable();
+            Hashtable temp_SortGroupList = new Hashtable();
+
+            try
+            {
+                string tempgroupname = "";
+                string tempskillset = "";
+                SortSkillGroup tempGroup = new SortSkillGroup();
+                reader = new XmlTextReader(SortFile);
+                while (reader.Read())
+                {
+                    switch (reader.NodeType)
+                    {
+                        case XmlNodeType.Element:
+                            if (reader.Name == "Sort")
+                            {
+                                _sortAuthor = reader["author"];
+                                _sortVer = reader["ver"];
+                                break;
+                            }
+                            else if (reader.Name == "SkillGroup")
+                            {
+                                tempGroup = new SortSkillGroup();
+                                tempGroup.Name = reader["name"];
+                                tempgroupname = tempGroup.Name;
+                                tempskillset = reader["skillset"];
+                                tempGroup.Skillset = GetSkillSet(tempskillset);
+                                break;
+                            }
+                            else if (reader.Name == "Shortname")
+                            {
+                                while (!(reader.NodeType == XmlNodeType.EndElement && reader.Name == "Shortname"))
+                                {
+                                    reader.Read();
+                                    if (reader.NodeType == XmlNodeType.Text)
+                                        temp_GroupNameList.Add(reader.Value.ToLower(), tempgroupname);
+                                }
+                                break;
+                            }
+                            else if (reader.Name == "Skill")
+                            {
+                                while (!(reader.NodeType == XmlNodeType.EndElement && reader.Name == "Skill"))
+                                {
+                                    reader.Read();
+                                    if (reader.NodeType == XmlNodeType.Text)
+                                        tempGroup.Skills.Add(reader.Value.ToString());
+                                }
+                                break;
+                            }
+                            Console.WriteLine("Unhandled Element: " + reader.Name);
+                            if (!_sortLoaded)
+                                _host.EchoText("Custom sorting will be disabled until a sorting file is succesfully loaded.");
+                            else
+                                _host.EchoText("Sorting reload failed, continuing ot use old sorting file.");
+                            return;
+                        case XmlNodeType.EndElement:
+                            if (reader.Name == "Sort")
+                            {
+                                break;
+                            }
+                            else if (reader.Name == "SkillGroup")
+                            {
+                                temp_SortGroupList.Add(tempgroupname, tempGroup);
+                                tempGroup = new SortSkillGroup();
+                                tempgroupname = "";
+                                break;
+                            }
+                            else if (reader.Name == "Shortname")
+                            {
+                                break;
+                            }
+                            else if (reader.Name == "Skill")
+                            {
+                                break;
+                            }
+                            if (!_sortLoaded)
+                                _host.EchoText("Custom sorting will be disabled until a sorting file is succesfully loaded.");
+                            else
+                                _host.EchoText("Sorting reload failed, continuing ot use old sorting file.");
+                            return;
+                        case XmlNodeType.Comment:
+                        case XmlNodeType.Whitespace:
+                        case XmlNodeType.XmlDeclaration:
+                            break;
+                        default:
+                            Console.WriteLine("UnhandledType: " + reader.NodeType.ToString());
+                            if (!_sortLoaded)
+                                _host.EchoText("Custom sorting will be disabled until a sorting file is succesfully loaded.");
+                            else
+                                _host.EchoText("Sorting reload failed, continuing ot use old sorting file.");
+                            return;
+                    }
                 }
 
             }
-
-            return skillName;
-        }
-
-        private string HighestWeapon(Hashtable skills)
-        {
-            string skillName = "";
-            int ranks = 0;
-
-            foreach (DictionaryEntry skill in skills)
+            catch (Exception ex)
             {
-                switch (skill.Key.ToString())
-                {
-                    case "Brawling":
-                    case "Composite Bow":
-                    case "Halberds":
-                    case "Heavy Blunt":
-                    case "Heavy Crossbow":
-                    case "Heavy Edged":
-                    case "Heavy Thrown":
-                    case "Light Blunt":
-                    case "Light Crossbow":
-                    case "Light Edged":
-                    case "Light Thrown":
-                    case "Long Bow":
-                    case "Medium Blunt":
-                    case "Medium Edged":
-                    case "Offhand Weapon":
-                    case "Pikes":
-                    case "Quarter Staff":
-                    case "Short Bow":
-                    case "Short Staff":
-                    case "Slings":
-                    case "Staff Sling":
-                    case "Twohanded Blunt":
-                    case "Twohanded Edged":
-                        if (Convert.ToInt32(skill.Value) > ranks)
-                        {
-                            skillName = skill.Key.ToString();
-                            ranks = Convert.ToInt32(skill.Value);
-                        }
-                        break;
-                    default:
-                        break;
-
-
-                }
-
-
+                if (reader != null)
+                    reader.Close();
+                _host.EchoText("Exception during sorting file load.");
+                _host.EchoText(ex.ToString());
+                if (!_sortLoaded)
+                    _host.EchoText("Custom sorting will be disabled until a sorting file is succesfully loaded.");
+                else
+                    _host.EchoText("Sorting reload failed, continuing ot use old sorting file.");
+                return;
             }
-
-            return skillName;
+            if (reader != null)
+                reader.Close();
+            _GroupNameList = temp_GroupNameList;
+            _SortGroupList = temp_SortGroupList;
+            _sortLoaded = true;
+            if (reloading)
+                _host.EchoText("Sorting reload succeded.");
         }
-
-        private string HighestArmor(Hashtable skills)
-        {
-            string skillName = "";
-            int ranks = 0;
-
-            foreach (DictionaryEntry skill in skills)
-            {
-                switch (skill.Key.ToString())
-                {
-                    case "Bone Armor":
-                    case "Cloth Armor":
-                    case "Heavy Chain":
-                    case "Heavy Plate":
-                    case "Leather Armor":
-                    case "Light Chain":
-                    case "Light Plate":
-                    case "Shield Usage":
-                        if (Convert.ToInt32(skill.Value) > ranks)
-                        {
-                            skillName = skill.Key.ToString();
-                            ranks = Convert.ToInt32(skill.Value);
-                        }
-                        break;
-                    default:
-                        break;
-                }
-
-
-            }
-
-            return skillName;
-        }
-
-        private string HighestSurvival(Hashtable skills)
-        {
-            string skillName = "";
-            int ranks = 0;
-
-            switch (_calcGuild)
-            {
-                case Guilds.Thief:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Climbing":
-                            case "Disarm Traps":
-                            case "Escaping":
-                            case "Evasion":
-                            case "Stealing":
-                            case "Hiding":
-                            case "Lockpicking":
-                            case "Perception":
-                            case "Backstab":
-                            case "Stalking":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-
-                        }
-                    }
-                    break;
-                case Guilds.Necromancer:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Climbing":
-                            case "Disarm Traps":
-                            case "Escaping":
-                            case "Evasion":
-                            case "First Aid":
-                            case "Foraging":
-                            case "Hiding":
-                            case "Lockpicking":
-                            case "Perception":
-                            case "Skinning":
-                            case "Stalking":
-                            case "Swimming":
-                            case "Stealing":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-                        }
-
-                    }
-                    break;
-                case Guilds.Empath:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Climbing":
-                            case "Disarm Traps":
-                            case "Escaping":
-                            case "Evasion":
-                            case "First Aid":
-                            case "Foraging":
-                            case "Hiding":
-                            case "Lockpicking":
-                            case "Perception":
-                            case "Skinning":
-                            case "Stalking":
-                            case "Swimming":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-
-                        }
-                    }
-                    break;
-                case Guilds.Ranger:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Climbing":
-                            case "Disarm Traps":
-                            case "Escaping":
-                            case "Evasion":
-                            case "First Aid":
-                            case "Foraging":
-                            case "Hiding":
-                            case "Lockpicking":
-                            case "Scouting":
-                            case "Perception":
-                            case "Skinning":
-                            case "Stalking":
-                            case "Stealing":
-                            case "Swimming":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-
-                        }
-                    }
-                    break;
-                case Guilds.Bard:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Climbing":
-                            case "Disarm Traps":
-                            case "Escaping":
-                            case "Evasion":
-                            case "First Aid":
-                            case "Foraging":
-                            case "Hiding":
-                            case "Lockpicking":
-                            case "Perception":
-                            case "Skinning":
-                            case "Stalking":
-                            case "Stealing":
-                            case "Swimming":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-
-                        }
-                    }
-                    break;
-                default:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Climbing":
-                            case "Disarm Traps":
-                            case "Escaping":
-                            case "Evasion":
-                            case "First Aid":
-                            case "Foraging":
-                            case "Hiding":
-                            case "Lockpicking":
-                            case "Perception":
-                            case "Skinning":
-                            case "Stalking":
-                            case "Swimming":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-
-                        }
-                    }
-                    break;
-            }
-
-            return skillName;
-
-        }
-
-        private string HighestLore(Hashtable skills)
-        {
-
-            string skillName = "";
-            int ranks = 0;
-
-            switch (_calcGuild)
-            {
-                case Guilds.Barbarian:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Appraisal":
-                            case "Mechanical Lore":
-                            case "Percussions":
-                            case "Strings":
-                            case "Winds":
-                            case "Vocals":
-                            case "Teaching":
-                            case "Scholarship":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-
-                        }
-
-                    }
-                    break;
-                case Guilds.Bard:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Appraisal":
-                            case "Mechanical Lore":
-                            case "Percussions":
-                            case "Strings":
-                            case "Winds":
-                            case "Vocals":
-                            case "Teaching":
-                            case "Scholarship":
-                            case "Musical Theory":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-
-                        }
-
-                    }
-                    break;
-                case Guilds.MoonMage:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Appraisal":
-                            case "Mechanical Lore":
-                            case "Percussions":
-                            case "Strings":
-                            case "Winds":
-                            case "Vocals":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-
-                        }
-
-                    }
-                    break;
-                case Guilds.Thief:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Appraisal":
-                            case "Percussions":
-                            case "Strings":
-                            case "Winds":
-                            case "Vocals":
-                            case "Teaching":
-                            case "Scholarship":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-
-                        }
-
-                    }
-                    break;
-                case Guilds.Empath:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Appraisal":
-                            case "Mechanical Lore":
-                            case "Percussions":
-                            case "Strings":
-                            case "Winds":
-                            case "Vocals":
-                            case "Scholarship":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-
-                        }
-
-                    }
-                    break;
-                case Guilds.Trader:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Mechanical Lore":
-                            case "Percussions":
-                            case "Strings":
-                            case "Winds":
-                            case "Vocals":
-                            case "Teaching":
-                            case "Scholarship":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-
-                        }
-
-                    }
-                    break;
-                case Guilds.Paladin:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Appraisal":
-                            case "Mechanical Lore":
-                            case "Percussions":
-                            case "Strings":
-                            case "Winds":
-                            case "Vocals":
-                            case "Teaching":
-                            case "Scholarship":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-
-                        }
-
-                    }
-                    break;
-                case Guilds.Ranger:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Appraisal":
-                            case "Mechanical Lore":
-                            case "Percussions":
-                            case "Strings":
-                            case "Winds":
-                            case "Vocals":
-                            case "Teaching":
-                            case "Scholarship":
-                            case "Animal Lore":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-
-                        }
-
-                    }
-                    break;
-                case Guilds.Cleric:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Appraisal":
-                            case "Mechanical Lore":
-                            case "Teaching":
-                            case "Percussions":
-                            case "Strings":
-                            case "Winds":
-                            case "Vocals":
-                            case "Scholarship":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-
-                        }
-
-                    }
-                    break;
-                case Guilds.WarriorMage:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Appraisal":
-                            case "Mechanical Lore":
-                            case "Percussions":
-                            case "Strings":
-                            case "Winds":
-                            case "Vocals":
-                            case "Teaching":
-                            case "Scholarship":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-
-                        }
-
-                    }
-                    break;
-                case Guilds.Necromancer:
-                    foreach (DictionaryEntry skill in skills)
-                    {
-                        switch (skill.Key.ToString())
-                        {
-                            case "Appraisal":
-                            case "Mechanical Lore":
-                            case "Percussions":
-                            case "Strings":
-                            case "Winds":
-                            case "Vocals":
-                            case "Teaching":
-                            case "Scholarship":
-                                if (Convert.ToInt32(skill.Value) > ranks)
-                                {
-                                    skillName = skill.Key.ToString();
-                                    ranks = Convert.ToInt32(skill.Value);
-                                }
-                                break;
-                            default:
-                                break;
-
-                        }
-
-                    }
-                    break;
-                default:
-                    break;
-
-            }
-
-            return skillName;
-
-        }
-
-        private int TotalMagic(Hashtable skills)
-        {
-            return Convert.ToInt32(skills["Power Perceive"]) + Convert.ToInt32(skills["Targeted Magic"]) + Convert.ToInt32(skills["Arcana"]) + Convert.ToInt32(skills["Harness Ability"]) + Convert.ToInt32(skills["Lunar Magic"]) + Convert.ToInt32(skills["Life Magic"]) + Convert.ToInt32(skills["Holy Magic"]) + Convert.ToInt32(skills["Elemental Magic"]) + Convert.ToInt32(skills["Inner Magic"]) + Convert.ToInt32(skills["Arcane Magic"]);
-        }
-
-        private int TotalSurvival(Hashtable skills)
-        {
-            int total = 0;
-            foreach (DictionaryEntry skill in skills)
-            {
-                switch (skill.Key.ToString())
-                {
-                    case "Climbing":
-                    case "Disarm Traps":
-                    case "Escaping":
-                    case "Evasion":
-                    case "First Aid":
-                    case "Foraging":
-                    case "Hiding":
-                    case "Scouting":
-                    case "Perception":
-                    case "Skinning":
-                    case "Stalking":
-                    case "Swimming":
-                        total = total + Convert.ToInt32(skill.Value);
-                        break;
-                    default:
-                        break;
-                }
-
-            }
-            return total;
-        }
-
-        private int TotalLore(Hashtable skills)
-        {
-            if (_calcGuild == Guilds.Empath)
-                return Convert.ToInt32(skills["Teaching"]) + Convert.ToInt32(skills["Scholarship"]) + Convert.ToInt32(skills["Mechanical Lore"]) + Convert.ToInt32(skills["Appraisal"]) + Convert.ToInt32(skills["Empathy"]);
-
-            if (_calcGuild == Guilds.Trader)
-                return Convert.ToInt32(skills["Teaching"]) + Convert.ToInt32(skills["Scholarship"]) + Convert.ToInt32(skills["Mechanical Lore"]) + Convert.ToInt32(skills["Appraisal"]) + Convert.ToInt32(skills["Trading"]);
-
-            return 0;
-        }
-
-        private void CalculateReq(ref int circle, ref int currentCircle, double rank1, double rank2, double rank3, double rank4, double rank5, double ranks, ref double ranksNeeded)
-        {
-
-            int i;
-            ranksNeeded = 0;
-            circle = 0;
-            currentCircle = 0;
-
-            for (i = 1; i <= 10; i++)
-            {
-                ranksNeeded += rank1;
-
-                if (Convert.ToInt32(ranksNeeded) > ranks)
-                {
-                    if (_calcCircle > i)
-                    {
-                        if (currentCircle == 0)
-                            currentCircle = i - 1;
-
-                        continue;
-                    }
-                    if (Convert.ToInt32(ranksNeeded - rank1) <= ranks)
-                        currentCircle = i - 1;
-                    circle = i;
-                    return;
-                }
-            }
-
-            for (i = 11; i <= 30; i++)
-            {
-                ranksNeeded += rank2;
-
-                if (Convert.ToInt32(ranksNeeded) > ranks)
-                {
-                    if (_calcCircle > i)
-                    {
-                        if (currentCircle == 0)
-                            currentCircle = i - 1;
-
-                        continue;
-                    }
-                    if (Convert.ToInt32(ranksNeeded - rank2) <= ranks)
-                        currentCircle = i - 1;
-                    circle = i;
-                    return;
-                }
-            }
-
-            for (i = 31; i <= 70; i++)
-            {
-                ranksNeeded += rank3;
-
-                if (Convert.ToInt32(ranksNeeded) > ranks)
-                {
-                    if (_calcCircle > i)
-                    {
-                        if (currentCircle == 0)
-                            currentCircle = i - 1;
-
-                        continue;
-                    }
-                    if (Convert.ToInt32(ranksNeeded - rank3) <= ranks)
-                        currentCircle = i - 1;
-                    circle = i;
-                    return;
-                }
-            }
-
-            for (i = 71; i <= 100; i++)
-            {
-                ranksNeeded += rank4;
-
-                if (Convert.ToInt32(ranksNeeded) > ranks)
-                {
-                    if (_calcCircle > i)
-                    {
-                        if (currentCircle == 0)
-                            currentCircle = i - 1;
-
-                        continue;
-                    }
-                    if (Convert.ToInt32(ranksNeeded - rank4) <= ranks)
-                        currentCircle = i - 1;
-                    circle = i;
-                    return;
-                }
-            }
-
-            for (i = 101; i <= 500; i++)
-            {
-                ranksNeeded += rank5;
-
-                if (Convert.ToInt32(ranksNeeded) > ranks)
-                {
-                    if (_calcCircle > i)
-                    {
-                        if (currentCircle == 0)
-                            currentCircle = i - 1;
-
-                        continue;
-                    }
-                    if (Convert.ToInt32(ranksNeeded - rank5) <= ranks)
-                        currentCircle = i - 1;
-                    circle = i;
-                    return;
-                }
-            }
-
-            circle = 500;
-        }
-
-        private void CalculateBarbarian()
-        {
-
-            reqList = new ArrayList();
-
-            int circle = 0;
-            double ranksNeeded = 0;
-            string skill = "";
-            int currentCircle = 0;
-
-            //Hard Skills:
-            //          Parry   Multi   Shield  App     Mech    Scholar
-            //001-010:  4       2       2       .5      .5      .5
-            //011-030:  4       3       0       0       0       0
-            //031-070:  4       3       0       0       0       0
-            //071-100:  4       4       0       0       0       0
-            //100 +  :  5       4       0       0       0       0
-            CalculateReq(ref circle, ref currentCircle, 4, 4, 4, 4, 5, Convert.ToInt32(_calcSkillList["Parry Ability"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Parry Ability", Convert.ToInt32(_calcSkillList["Parry Ability"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 3, 3, 4, 4, Convert.ToInt32(_calcSkillList["Multi Opponent"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Multi Opponent", Convert.ToInt32(_calcSkillList["Multi Opponent"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 0, 0, 0, 0, Convert.ToInt32(_calcSkillList["Shield Usage"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Shield Usage", Convert.ToInt32(_calcSkillList["Shield Usage"])));
-            CalculateReq(ref circle, ref currentCircle, .5, 0, 0, 0, 0, Convert.ToInt32(_calcSkillList["Appraisal"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Appraisal", Convert.ToInt32(_calcSkillList["Appraisal"])));
-            CalculateReq(ref circle, ref currentCircle, .5, 0, 0, 0, 0, Convert.ToInt32(_calcSkillList["Mechanical Lore"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Mechanical Lore", Convert.ToInt32(_calcSkillList["Mechanical Lore"])));
-            CalculateReq(ref circle, ref currentCircle, .5, 0, 0, 0, 0, Convert.ToInt32(_calcSkillList["Scholarship"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Scholarship", Convert.ToInt32(_calcSkillList["Scholarship"])));
-
-            //Weapons Skills
-            //          1st     2nd     3rd     4th     5th
-            //001-010:  4       4       0       0       0
-            //010-030:  5       5       0       0       0
-            //031-070:  6       4       4       0       0
-            //071-100:  6       6       4       0       0
-            //100 +  :  6       6       6       6       6
-            skill = HighestWeapon(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 4, 5, 6, 6, 6, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestWeapon(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 4, 5, 4, 6, 6, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestWeapon(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 0, 0, 4, 4, 6, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestWeapon(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 0, 0, 0, 0, 6, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestWeapon(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 0, 0, 0, 0, 6, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Armor Skills
-            //          1st     2nd
-            //001-010:  3       0
-            //010-030:  4       0
-            //031-070:  4       0
-            //071-100:  5       4
-            //100 +  :  6       4
-            skill = HighestArmor(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 3, 4, 4, 5, 6, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Armor(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestArmor(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 0, 0, 0, 4, 4, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Armor(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Survival Skills
-            //          1st/2nd     3rd-6th     7th-8th     9th-10th
-            //001-010:  2           2           2           2
-            //010-030:  2           2           0           0
-            //031-070:  3           2           0           0
-            //071-100:  3           2           2           0
-            //100 +  :  3           3           3           0
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 3, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 3, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 2, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 2, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 2, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 2, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "6th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 0, 0, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "7th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 0, 0, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "8th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 0, 0, 0, 0, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "9th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 0, 0, 0, 0, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "10th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Lore Skills
-            //          1st     2nd
-            //001-010:  0       0
-            //010-030:  0       0
-            //031-070:  0       0
-            //071-100:  2       0
-            //100 +  :  2       2
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 0, 0, 0, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 0, 0, 0, 0, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-        }
-
-        private void CalculateBard()
-        {
-            reqList = new ArrayList();
-
-
-            int circle = 0;
-            double ranksNeeded = 0;
-            string skill = "";
-            int currentCircle = 0;
-            //Hard Skills:
-            //          Multi   Parry   Music Theory    Vocals  Percussion  Winds   Strings
-            //001-010:  1       1       2               2       2           2       2
-            //011-030:  1       2       2               2       2           2       2
-            //031-070:  2       3       3               3       3           3       3
-            //071-100:  2       3       4               4       4           4       4
-            //100 +  :  3       4       4               4       4           4       4
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 2, 2, 3, Convert.ToInt32(_calcSkillList["Multi Opponent"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Multi Opponent", Convert.ToInt32(_calcSkillList["Multi Opponent"])));
-            CalculateReq(ref circle, ref currentCircle, 1, 2, 3, 3, 4, Convert.ToInt32(_calcSkillList["Parry Ability"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Parry Ability", Convert.ToInt32(_calcSkillList["Parry Ability"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 4, 4, Convert.ToInt32(_calcSkillList["Musical Theory"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Musical Theory", Convert.ToInt32(_calcSkillList["Musical Theory"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 4, 4, Convert.ToInt32(_calcSkillList["Vocals"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Vocals", Convert.ToInt32(_calcSkillList["Vocals"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 4, 4, Convert.ToInt32(_calcSkillList["Percussions"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Percussions", Convert.ToInt32(_calcSkillList["Percussions"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 4, 4, Convert.ToInt32(_calcSkillList["Winds"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Winds", Convert.ToInt32(_calcSkillList["Winds"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 4, 4, Convert.ToInt32(_calcSkillList["Strings"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Strings", Convert.ToInt32(_calcSkillList["Strings"])));
-
-            //Lore Skills:
-            //          1st/2nd     3rd/4th     5th/6th
-            //001-010:  4           3           3
-            //011-030:  4           3           3
-            //031-070:  4           4           3
-            //071-100:  5           5           4
-            //100 +  :  6           6           5
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 4, 4, 4, 5, 6, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 4, 4, 4, 5, 6, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 3, 3, 4, 5, 6, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 3, 3, 4, 5, 6, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 3, 3, 3, 4, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 3, 3, 3, 4, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "6th Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Survival Skills:
-            //          1st-6th
-            //001-010:  1
-            //011-030:  1
-            //031-070:  1
-            //071-100:  2
-            //100 +  :  2
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "6th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Weapon Skills:
-            //          1st     2nd          
-            //001-010:  3       1
-            //011-030:  3       2
-            //031-070:  3       3
-            //071-100:  4       3
-            //100 +  :  5       4
-            skill = HighestWeapon(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 3, 3, 3, 4, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestWeapon(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 2, 3, 3, 4, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Armor Skills:
-            //          1st     2nd
-            //001-010:  2       0
-            //011-030:  2       0
-            //031-070:  2       1
-            //071-100:  2       2
-            //100 +  :  3       3
-            skill = HighestArmor(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 2, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Armor(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestArmor(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 0, 0, 1, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Armor(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Magic Skills:
-            //          1st     2nd/3rd
-            //001-010:  2       1
-            //011-030:  3       2
-            //031-070:  3       3
-            //071-100:  4       3
-            //100 +  :  4       4
-            skill = HighestMagic(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 3, 3, 4, 4, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 2, 3, 3, 4, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 2, 3, 3, 4, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-        }
-
-        private void CalculateCleric()
-        {
-            reqList = new ArrayList();
-
-            int ranks = 0;
-            int circle = 0;
-            double ranksNeeded = 0;
-            string skill = "";
-            int currentCircle = 0;
-
-            //Hard Skills:
-            //          Harness     Teaching    Shield  Parry   TotalMagic
-            //001-010:  4           2           1       2       20
-            //011-030:  4           3           2       3       20
-            //031-070:  5           3           0       3       28
-            //071-100:  6           4           0       3       33
-            //100 +  :  7           4           0       3       38
-            CalculateReq(ref circle, ref currentCircle, 4, 4, 5, 6, 7, Convert.ToInt32(_calcSkillList["Harness Ability"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Harness Ability", Convert.ToInt32(_calcSkillList["Harness Ability"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 3, 3, 4, 4, Convert.ToInt32(_calcSkillList["Teaching"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Teaching", Convert.ToInt32(_calcSkillList["Teaching"])));
-            CalculateReq(ref circle, ref currentCircle, 1, 2, 0, 0, 0, Convert.ToInt32(_calcSkillList["Shield Usage"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Shield Usage", Convert.ToInt32(_calcSkillList["Shield Usage"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 3, 3, 3, 3, Convert.ToInt32(_calcSkillList["Parry Ability"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Parry Ability", Convert.ToInt32(_calcSkillList["Parry Ability"])));
-            ranks = TotalMagic(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 20, 20, 28, 33, 38, ranks, ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Overall Magic", ranks));
-
-            //Lore Skills:
-            //          1st/2nd     3rd     4th
-            //001-010:  2           1       1
-            //011-030:  3           2       1
-            //031-070:  3           3       2
-            //071-100:  3           3       2
-            //100 +  :  4           4       3
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 3, 3, 3, 4, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 3, 3, 3, 4, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 2, 3, 3, 4, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 2, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Survival Skills:
-            //          1st-6th     7th/8th
-            //001-010:  1           0
-            //011-030:  1           0
-            //031-070:  1           0
-            //071-100:  2           0
-            //100 +  :  2           2
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "6th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 0, 0, 0, 0, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "7th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 0, 0, 0, 0, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "8th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Weapon Skills:
-            //          1st
-            //001-010:  3
-            //011-030:  3
-            //031-070:  4
-            //071-100:  4
-            //100 +  :  5
-            skill = HighestWeapon(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 3, 3, 4, 4, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Armor Skills:
-            //          
-            //001-010:  2
-            //011-030:  2
-            //031-070:  2
-            //071-100:  3
-            //100 +  :  3
-            skill = HighestArmor(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 2, 3, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Armor(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-        }
-
-        private void CalculateEmpath()
-        {
-            reqList = new ArrayList();
-
-            int ranks = 0;
-            int circle = 0;
-            double ranksNeeded = 0;
-            string skill = "";
-            int currentCircle = 0;
-
-            //Hard Skills:
-            //          Teach   Empathy     Scholar     FA      Evasion     Forage      Lore (Empathy+Teach+Scholar+App+Mech)
-            //001-010:  2       4           2           2       1           1           12
-            //011-030:  3.5     5           2.5         2.5     0           1           16
-            //031-070:  4.5     6           3           3       0           0           19
-            //071-100:  4.5     6           3           3       0           0           21
-            //100 +  :  5       7           3           3.5     0           0           26
-            CalculateReq(ref circle, ref currentCircle, 2, 3.5, 4.5, 4.5, 5, Convert.ToInt32(_calcSkillList["Teaching"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Teaching", Convert.ToInt32(_calcSkillList["Teaching"])));
-            CalculateReq(ref circle, ref currentCircle, 4, 5, 6, 6, 7, Convert.ToInt32(_calcSkillList["Empathy"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Empathy", Convert.ToInt32(_calcSkillList["Empathy"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2.5, 3, 3, 3, Convert.ToInt32(_calcSkillList["Scholarship"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Scholarship", Convert.ToInt32(_calcSkillList["Scholarship"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2.5, 3, 3, 3.5, Convert.ToInt32(_calcSkillList["First Aid"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "First Aid", Convert.ToInt32(_calcSkillList["First Aid"])));
-            CalculateReq(ref circle, ref currentCircle, 1, 0, 0, 0, 0, Convert.ToInt32(_calcSkillList["Evasion"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Evasion", Convert.ToInt32(_calcSkillList["Evasion"])));
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 0, 0, 0, Convert.ToInt32(_calcSkillList["Foraging"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Foraging", Convert.ToInt32(_calcSkillList["Foraging"])));
-            ranks = TotalLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 12, 16, 19, 21, 26, ranks, ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Overall Lore", ranks));
-
-
-            //Survival Skills: (No stealing/Backstab)
-            //          1st/2nd     3rd/4th     5th/6th
-            //001-010:  1           1           1
-            //011-030:  2           1           1
-            //031-070:  2           2           1
-            //071-100:  3           2           2
-            //100 +  :  4           3           2
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 2, 2, 3, 4, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "1st Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 2, 2, 3, 4, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "2nd Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 2, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "3rd Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 2, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "6th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Magic Skills:
-            //          1st     2nd/3rd
-            //001-010:  3       2
-            //011-030:  4       3
-            //031-070:  5       4
-            //071-100:  5       4
-            //100 +  :  6       5
-            skill = HighestMagic(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 3, 4, 5, 5, 6, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "1st Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 3, 4, 4, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "2nd Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 3, 4, 4, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "3rd Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-        }
-        
-        private void CalculateMoonMage()
-        {
-            reqList = new ArrayList();
-
-            int ranks = 0;
-            int circle = 0;
-            double ranksNeeded = 0;
-            string skill = "";
-            int currentCircle = 0;
-
-            //Hard Skills:
-            //          PP      Astro   Scholar     Teach       Magic
-            //001-010:  4       2       3           2           20
-            //011-030:  4       2       3           2           20
-            //031-070:  5       3       3           2           28
-            //071-100:  6       4       4           2           33
-            //100 +  :  7       5       4           3           38
-            CalculateReq(ref circle, ref currentCircle, 4, 4, 5, 6, 7, Convert.ToInt32(_calcSkillList["Power Perceive"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Power Perceive", Convert.ToInt32(_calcSkillList["Power Perceive"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 4, 5, Convert.ToInt32(_calcSkillList["Astrology"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Astrology", Convert.ToInt32(_calcSkillList["Astrology"])));
-            CalculateReq(ref circle, ref currentCircle, 3, 3, 3, 4, 4, Convert.ToInt32(_calcSkillList["Scholarship"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Scholarship", Convert.ToInt32(_calcSkillList["Scholarship"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 2, 2, 3, Convert.ToInt32(_calcSkillList["Teaching"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Teaching", Convert.ToInt32(_calcSkillList["Teaching"])));
-            ranks = TotalMagic(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 20, 20, 28, 33, 38, ranks, ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Overall Magic", ranks));
-
-            //Lore Skills:
-            //          1st     2nd
-            //001-010:  2       0
-            //011-030:  2       0
-            //031-070:  3       0
-            //071-100:  3       2
-            //100 +  :  4       3
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 3, 4, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 0, 0, 0, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Survival Skills:
-            //          1st/2nd     3rd-6th     7th/8th
-            //001-010:  2           2           2
-            //011-030:  2           2           0
-            //031-070:  3           2           0
-            //071-100:  3           2           2
-            //100 +  :  3           3           3
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 3, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 3, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 2, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 2, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 2, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 2, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "6th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 0, 0, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "7th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 0, 0, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "8th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-        }
-
-        private void CalculateNecromancer()
-        {
-            reqList = new ArrayList();
-
-            int circle = 0;
-            double ranksNeeded = 0;
-            string skill = "";
-            int currentCircle = 0;
-
-            //Hard Skills:
-            //          LE      Skin    Evasion     Thanatology     FA
-            //001-010:  1       2       2           3               2
-            //011-030:  2       2       2           3               2
-            //031-070:  2       3       3           3               2
-            //071-100:  2       3       3           4               3
-            //100 +  :  2       3       3           5               3
-            CalculateReq(ref circle, ref currentCircle, 1, 2, 2, 2, 2, Convert.ToInt32(_calcSkillList["Light Edged"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Light Edged", Convert.ToInt32(_calcSkillList["Light Edged"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 3, 3, Convert.ToInt32(_calcSkillList["Skinning"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Skinning", Convert.ToInt32(_calcSkillList["Skinning"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 3, 3, Convert.ToInt32(_calcSkillList["Evasion"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Evasion", Convert.ToInt32(_calcSkillList["Evasion"])));
-            CalculateReq(ref circle, ref currentCircle, 3, 3, 3, 4, 5, Convert.ToInt32(_calcSkillList["Thanatology"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Thanatology", Convert.ToInt32(_calcSkillList["Thanatology"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 2, 3, 3, Convert.ToInt32(_calcSkillList["First Aid"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "First Aid", Convert.ToInt32(_calcSkillList["First Aid"])));
-
-
-            //Survival Skills:
-            //          1st/2nd     3rd/4th     5th/6th     7th/8th 
-            //001-010:  4           3           3           2
-            //011-030:  4           4           3           3
-            //031-070:  4           4           4           3
-            //071-100:  5           4           4           4
-            //100 +  :  6           5           4           4
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 4, 4, 4, 5, 6, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "1st Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 4, 4, 4, 5, 6, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "2nd Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 3, 4, 4, 4, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "3rd Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 3, 4, 4, 4, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 3, 3, 4, 4, 4, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 3, 3, 4, 4, 4, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "6th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 3, 3, 4, 4, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "7th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 3, 3, 4, 4, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "8th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Magic Skills:
-            //          1st     2nd     3rd     4th     5th
-            //001-010:  3       3       2       2       1
-            //011-030:  4       3       3       2       2
-            //031-070:  4       4       3       3       2
-            //071-100:  5       5       4       4       3
-            //100 +  :  6       6       5       5       3
-            skill = HighestMagic(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 3, 4, 4, 5, 6, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "1st Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 3, 3, 4, 5, 6, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "2nd Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 3, 3, 4, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "3rd Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 4, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 2, 2, 3, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Armor Skills:
-            //          1st
-            //001-010:  1
-            //011-030:  2
-            //031-070:  2
-            //071-100:  2
-            //100 +  :  3
-            skill = HighestArmor(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 2, 2, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "1st Armor(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Lore Skills:
-            //          1st     2nd
-            //001-010:  2       2
-            //011-030:  2       2
-            //031-070:  3       2
-            //071-100:  3       3
-            //100 +  :  3       3
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 3, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "1st Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 2, 3, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "2nd Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-        }
-
-        private void CalculatePaladin()
-        {
-            reqList = new ArrayList();
-
-            int circle = 0;
-            double ranksNeeded = 0;
-            string skill = "";
-            int currentCircle = 0;
-
-            //Hard Skills:
-            //          Teach   FA      Scholar     Muliti      Parry       Shield
-            //001-010:  1       1       1           2           3           2
-            //011-030:  2       1       2           2           3           2
-            //031-070:  0       0       0           2           4           0
-            //071-100:  0       0       0           3           4           0
-            //100 +  :  0       0       0           4           5           0
-            CalculateReq(ref circle, ref currentCircle, 1, 2, 0, 0, 0, Convert.ToInt32(_calcSkillList["Teaching"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Teaching", Convert.ToInt32(_calcSkillList["Teaching"])));
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 0, 0, 0, Convert.ToInt32(_calcSkillList["First Aid"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "First Aid", Convert.ToInt32(_calcSkillList["First Aid"])));
-            CalculateReq(ref circle, ref currentCircle, 1, 2, 0, 0, 0, Convert.ToInt32(_calcSkillList["Scholarship"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Scholarship", Convert.ToInt32(_calcSkillList["Scholarship"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 2, 3, 4, Convert.ToInt32(_calcSkillList["Multi Opponent"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Multi Opponent", Convert.ToInt32(_calcSkillList["Multi Opponent"])));
-            CalculateReq(ref circle, ref currentCircle, 3, 3, 4, 4, 5, Convert.ToInt32(_calcSkillList["Parry Ability"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Parry Ability", Convert.ToInt32(_calcSkillList["Parry Ability"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 0, 0, 0, Convert.ToInt32(_calcSkillList["Shield Usage"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Shield Usage", Convert.ToInt32(_calcSkillList["Shield Usage"])));
-
-            //Skills:
-            //          1st-3rd     4th
-            //001-010:  1           1
-            //011-030:  2           0
-            //031-070:  2           2
-            //071-100:  3           0
-            //100 +  :  3           3
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 2, 2, 3, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 2, 2, 3, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 2, 2, 3, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 0, 2, 0, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Weapon Skills:
-            //          1st     2nd     3rd     4th/5th
-            //001-010:  3       0       0       0
-            //011-030:  4       2       0       0
-            //031-070:  4       3       0       0
-            //071-100:  5       3       3       0
-            //100 +  :  5       4       3       6
-            skill = HighestWeapon(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 3, 4, 4, 5, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestWeapon(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 0, 2, 3, 3, 4, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestWeapon(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 0, 0, 0, 3, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestWeapon(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 0, 0, 0, 0, 6, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestWeapon(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 0, 0, 0, 0, 6, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Armor Skills:
-            //          1st     2nd
-            //001-010:  4       (2)
-            //011-030:  5       (2)
-            //031-070:  5       3
-            //071-100:  5       4
-            //100 +  :  6       5
-            skill = HighestArmor(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 4, 5, 5, 5, 6, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Armor(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestArmor(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 0, 0, 3, 4, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            if (ranksNeeded > 0)
-            {
-                CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 4, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            }
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Armor(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Survival Skills:
-            //          1st-4th     5th-6th
-            //001-010:  1           1
-            //011-030:  1           0
-            //031-070:  1           0
-            //071-100:  2           0
-            //100 +  :  2           2
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 0, 0, 0, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 0, 0, 0, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "6th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Magic Skills:
-            //          1st-3rd
-            //001-010:  1
-            //011-030:  1
-            //031-070:  1
-            //071-100:  1
-            //100 +  :  2
-            skill = HighestMagic(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 1, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 1, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 1, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-        }
-
-        private void CalculateRanger()
-        {
-            reqList = new ArrayList();
-
-
-            int circle = 0;
-            double ranksNeeded = 0;
-            string skill = "";
-            int currentCircle = 0;
-
-            //Hard Skills:
-            //          MO      Parry   Skin    Stalk   Scout
-            //001-010:  2       2       2       2       2
-            //011-030:  2       2       2       2       2
-            //031-070:  2       2       3       3       3
-            //071-100:  2       3       3       3       3
-            //100 +  :  2       3       3       3       3
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 2, 2, 2, Convert.ToInt32(_calcSkillList["Multi Opponent"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Multi Opponent", Convert.ToInt32(_calcSkillList["Multi Opponent"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 2, 3, 3, Convert.ToInt32(_calcSkillList["Parry Ability"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Parry Ability", Convert.ToInt32(_calcSkillList["Parry Ability"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 3, 3, Convert.ToInt32(_calcSkillList["Skinning"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Skinning", Convert.ToInt32(_calcSkillList["Skinning"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 3, 3, Convert.ToInt32(_calcSkillList["Stalking"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Stalking", Convert.ToInt32(_calcSkillList["Stalking"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 3, 3, Convert.ToInt32(_calcSkillList["Scouting"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Scouting", Convert.ToInt32(_calcSkillList["Scouting"])));
-
-
-            //Lore Skills:
-            //          1st     2nd
-            //001-010:  1       0
-            //011-030:  1       1
-            //031-070:  2       1
-            //071-100:  2       2
-            //100 +  :  2       2
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 2, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 0, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Survival Skills:
-            //          1st/2nd     3rd/4th     5th/6th     7th/8th     9th/10th
-            //001-010:  4           3           3           2           0
-            //011-030:  4           4           3           3           0
-            //031-070:  4           4           4           3           2
-            //071-100:  5           4           4           4           2
-            //100 +  :  6           5           5           5           3
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 4, 4, 4, 5, 6, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 4, 4, 4, 5, 6, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 3, 4, 4, 4, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 3, 4, 4, 4, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 3, 3, 4, 4, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 3, 3, 4, 4, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "6th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 3, 3, 4, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "7th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 3, 3, 4, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "8th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 0, 0, 2, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "9th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 0, 0, 2, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "10th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Weapon Skills:
-            //          1st     2nd     3rd
-            //001-010:  3       1       0
-            //011-030:  3       2       0
-            //031-070:  4       3       2
-            //071-100:  4       3       2
-            //100 +  :  5       4       3
-            skill = HighestWeapon(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 3, 3, 4, 4, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestWeapon(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 2, 3, 3, 4, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestWeapon(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 0, 0, 2, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Armor Skills:
-            //          1st     2nd
-            //001-010:  2       0
-            //011-030:  3       0
-            //031-070:  3       2
-            //071-100:  4       3
-            //100 +  :  5       3
-            skill = HighestArmor(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 3, 3, 4, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Armor(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestArmor(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 0, 0, 2, 3, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Armor(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Magic Skills:
-            //          1st     2nd
-            //001-010:  1       0
-            //011-030:  2       2
-            //031-070:  2       2
-            //071-100:  3       3
-            //100 +  :  3       3
-            skill = HighestMagic(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 2, 2, 3, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestMagic(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 0, 2, 2, 3, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Magic(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-        }
-
-        private void CalculateThief()
-        {
-            reqList = new ArrayList();
-
-            int circle = 0;
-            double ranksNeeded = 0;
-            string skill = "";
-            int currentCircle = 0;
-
-            //Hard Skills:
-            //          MO  Parry   Steal   Hide    Stalk   Lock    Mech    Shield
-            //001-010:  1   1       2       2       2       2       2       1
-            //011-030:  1   1       2       2       2       2       2       0
-            //031-070:  1   1       3       3       3       3       3       0
-            //071-100:  2   2       3       3       3       3       4       0
-            //100 +  :  2   2       3       3       3       3       5       0
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList["Multi Opponent"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Multi Opponent", Convert.ToInt32(_calcSkillList["Multi Opponent"])));
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList["Parry Ability"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Parry Ability", Convert.ToInt32(_calcSkillList["Parry Ability"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 3, 3, Convert.ToInt32(_calcSkillList["Stealing"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Stealing", Convert.ToInt32(_calcSkillList["Stealing"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 3, 3, Convert.ToInt32(_calcSkillList["Hiding"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Hiding", Convert.ToInt32(_calcSkillList["Hiding"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 3, 3, Convert.ToInt32(_calcSkillList["Stalking"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Stalking", Convert.ToInt32(_calcSkillList["Stalking"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 3, 3, Convert.ToInt32(_calcSkillList["Lockpicking"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Lockpicking", Convert.ToInt32(_calcSkillList["Lockpicking"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 3, 4, 5, Convert.ToInt32(_calcSkillList["Mechanical Lore"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Mechanical Lore", Convert.ToInt32(_calcSkillList["Mechanical Lore"])));
-            CalculateReq(ref circle, ref currentCircle, 1, 0, 0, 0, 0, Convert.ToInt32(_calcSkillList["Shield Usage"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Shield Usage", Convert.ToInt32(_calcSkillList["Shield Usage"])));
-
-            //Lore Skills:
-            //          1st     2nd/3rd
-            //001-010:  1       1
-            //011-030:  2       1
-            //031-070:  3       1
-            //071-100:  3       2
-            //100 +  :  3       2
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 2, 3, 3, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Survival Skills:
-            //          1st/2nd     3rd/4th     5th/6th     7th/8th
-            //001-010:  4           3           3           2
-            //011-030:  4           3           3           3
-            //031-070:  4           4           4           3
-            //071-100:  5           5           4           4
-            //100 +  :  6           6           5           5
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 4, 4, 4, 5, 6, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 4, 4, 4, 5, 6, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 3, 3, 4, 5, 6, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 3, 3, 4, 5, 6, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 3, 3, 4, 4, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 3, 3, 4, 4, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "6th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 3, 3, 4, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "7th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 3, 3, 4, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "8th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Weapon Skills:
-            //          1st     2nd     3rd
-            //001-010:  2       0       0
-            //011-030:  3       2       0
-            //031-070:  3       3       1
-            //071-100:  4       3       2
-            //100 +  :  4       4       2
-            skill = HighestWeapon(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 3, 3, 4, 4, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestWeapon(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 0, 2, 3, 3, 4, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestWeapon(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 0, 0, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Armor Skills:
-            //          1st
-            //001-010:  2
-            //011-030:  2
-            //031-070:  2
-            //071-100:  3
-            //100 +  :  3
-            skill = HighestArmor(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 2, 3, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Armor(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-        }
-
-        private void CalculateTrader()
-        {
-            reqList = new ArrayList();
-
-            int ranks = 0;
-            int circle = 0;
-            double ranksNeeded = 0;
-            string skill = "";
-            int currentCircle = 0;
-
-            //Hard Skills:
-            //          Appraisal   Trading     Lore
-            //001-010:  3           4           12
-            //011-030:  3           5           16
-            //031-070:  4           6           19
-            //071-100:  5           7           21
-            //100 +  :  6           8           26
-            CalculateReq(ref circle, ref currentCircle, 3, 3, 4, 5, 6, Convert.ToInt32(_calcSkillList["Appraisal"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Appraisal", Convert.ToInt32(_calcSkillList["Appraisal"])));
-            CalculateReq(ref circle, ref currentCircle, 4, 5, 6, 7, 8, Convert.ToInt32(_calcSkillList["Trading"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Trading", Convert.ToInt32(_calcSkillList["Trading"])));
-            ranks = TotalLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 12, 16, 19, 21, 26, ranks, ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Overall Lore", ranks));
-
-
-            //Survival Skills:
-            //          1st/2nd     3rd/4th     5th/6th
-            //001-010:  1           1           1
-            //011-030:  2           1           1
-            //031-070:  2           2           1
-            //071-100:  3           2           2
-            //100 +  :  4           3           2
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 2, 2, 3, 4, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 2, 2, 3, 4, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 2, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Tertiary Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 2, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "6th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Armor Skills:
-            //          1st     2nd
-            //001-010:  1       1
-            //011-030:  2       1
-            //031-070:  2       1
-            //071-100:  2       1
-            //100 +  :  2       1
-            skill = HighestArmor(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 2, 2, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Primary Armor(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestArmor(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 1, 1, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Secondary Armor(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-        }
-
-        private void CalculateWarriorMage()
-        {
-            reqList = new ArrayList();
-
-            int ranks = 0;
-            int circle = 0;
-            double ranksNeeded = 0;
-            string skill = "";
-            int currentCircle = 0;
-
-            //Hard Skills:
-            //          TM      Parry       Shield      MO      Magic
-            //001-010:  4       2           1           2       20
-            //011-030:  4       3           0           2       20
-            //031-070:  4       3           0           2       28
-            //071-100:  5       4           0           2       33
-            //100 +  :  6       4           0           4       38
-            CalculateReq(ref circle, ref currentCircle, 4, 4, 4, 5, 6, Convert.ToInt32(_calcSkillList["Targeted Magic"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Targeted Magic", Convert.ToInt32(_calcSkillList["Targeted Magic"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 3, 3, 4, 4, Convert.ToInt32(_calcSkillList["Parry Ability"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Parry Ability", Convert.ToInt32(_calcSkillList["Parry Ability"])));
-            CalculateReq(ref circle, ref currentCircle, 1, 0, 0, 0, 0, Convert.ToInt32(_calcSkillList["Shield Usage"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Shield Usage", Convert.ToInt32(_calcSkillList["Shield Usage"])));
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 2, 2, 4, Convert.ToInt32(_calcSkillList["Multi Opponent"]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Multi Opponent", Convert.ToInt32(_calcSkillList["Multi Opponent"])));
-            ranks = TotalMagic(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 20, 20, 28, 33, 38, ranks, ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "Overall Magic", ranks));
-
-            //Lore Skills:
-            //          1st-3rd     4th
-            //001-010:  1           1
-            //011-030:  2           0
-            //031-070:  2           2
-            //071-100:  3           0
-            //100 +  :  3           3
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 2, 2, 3, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "1st Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 2, 2, 3, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "2nd Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 2, 2, 3, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "3rd Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestLore(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 0, 2, 0, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Lore(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Weapon Skills:
-            //          1st     2nd     3rd
-            //001-010:  3       0       0
-            //011-030:  3       2       0
-            //031-070:  4       3       0
-            //071-100:  4       3       2
-            //100 +  :  5       4       3
-            skill = HighestWeapon(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 3, 3, 4, 4, 5, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "1st Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestWeapon(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 0, 2, 3, 3, 4, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "2nd Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestWeapon(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 0, 0, 0, 2, 3, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "3rd Weapon(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Armor Skills:
-            //          1st
-            //001-010:  2
-            //011-030:  2
-            //031-070:  2
-            //071-100:  3
-            //100 +  :  4
-            skill = HighestArmor(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 2, 2, 2, 3, 4, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "1st Armor(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-
-            //Survival Skills:
-            //         1st-6th      7th-8th 
-            //001-010:  1           0
-            //011-030:  1           0
-            //031-070:  1           0
-            //071-100:  2           0
-            //100 +  :  2           2
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "1st Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "2nd Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "3rd Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "4th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "5th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 1, 1, 1, 2, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "6th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 0, 0, 0, 0, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "7th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-            skill = HighestSurvival(_calcSkillList);
-            CalculateReq(ref circle, ref currentCircle, 0, 0, 0, 0, 2, Convert.ToInt32(_calcSkillList[skill]), ref ranksNeeded);
-            reqList.Add(new CircleReq(circle, currentCircle, Convert.ToInt32(ranksNeeded), "8th Survival(" + skill + ")", Convert.ToInt32(_calcSkillList[skill])));
-            _calcSkillList.Remove(skill);
-        }
-
-        #endregion
-
         #endregion
     }
 }
